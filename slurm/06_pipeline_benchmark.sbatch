@@ -29,8 +29,13 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=120G
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+# Centralized logs. SLURM writes its .out/.err here (flat, per stage); lib.sh's
+# vignocr_install_postmortem then creates logs/slurm/<stage>/<jobid>/ for copied
+# train logs + FAILED/DONE markers. The per-stage dir is pre-created by
+# submit_all.sh; --chdir anchors CWD to the repo root.
+#SBATCH --output=logs/slurm/06_pipeline_benchmark/%x-%j.out
+#SBATCH --error=logs/slurm/06_pipeline_benchmark/%x-%j.err
+#SBATCH --open-mode=append
 
 set -Eeuo pipefail
 PROJECT_DIR="$HOME/projects/def-khenni/ydait/pharmakon-ocr"

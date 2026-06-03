@@ -228,6 +228,42 @@ except Exception as e:
 PY
 
 # --------------------------------------------------------------------------- #
+# 6b. Pre-fetch RF-DETR COCO pretrained weights into VIGNOCR_PRETRAINED_DIR.
+#     Compute nodes have NO outbound network — without this cache, the trainer
+#     would hang trying to download the backbone from the Hub. Login node has
+#     limited HTTPS, so we run the fetch here, once.
+# --------------------------------------------------------------------------- #
+if python -c "import rfdetr" 2>/dev/null; then
+  vlog "pre-fetching RF-DETR COCO pretrained weights -> $VIGNOCR_PRETRAINED_DIR"
+  bash "$SCRIPT_DIR/fetch_pretrained.sh" \
+    || vwarn "fetch_pretrained.sh failed — Stage A/B training will refuse to start on compute nodes. Re-run it manually before submitting jobs."
+else
+  vwarn "rfdetr not importable here (the [ml] install probably fell back to core-only)."
+  vwarn "Without rfdetr we cannot pre-fetch its pretrained weights. Train jobs will fail."
+  vwarn "To force rfdetr from PyPI (login node has limited HTTPS):"
+  vwarn "    pip install rfdetr"
+  vwarn "Then re-run this script."
+fi
+
+# --------------------------------------------------------------------------- #
+# 6c. Pre-create the centralized SLURM log tree so the #SBATCH --output paths
+#     resolve at submit time (SLURM does not reliably create deep parents).
+# --------------------------------------------------------------------------- #
+for entry in \
+    01_validate \
+    02_train_detection \
+    02a_train_vignette \
+    03_eval_export_detection \
+    04_autolabel_ocr \
+    04_train_ocr \
+    05_finetune_ocr \
+    05_eval_ocr \
+    06_pipeline_benchmark; do
+  mkdir -p "$VIGNOCR_LOGS_DIR/$entry"
+done
+vlog "centralized SLURM log tree ready: $VIGNOCR_LOGS_DIR"
+
+# --------------------------------------------------------------------------- #
 # 7. Next steps.
 # --------------------------------------------------------------------------- #
 cat >&2 <<EOF

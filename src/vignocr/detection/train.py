@@ -11,6 +11,7 @@ Public API (per docs/INTERFACES.md):
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import shutil
@@ -30,6 +31,21 @@ from vignocr.detection._resolve import resolve_class_schema, resolve_dataset
 log = get_logger(__name__)
 
 _ML_HINT = "Detection training needs the ML extra. Run: pip install -e .[ml]"
+
+# Offline-init guidance: shown when no cached pretrained weights are available
+# and no resume checkpoint was passed. Compute nodes on Narval have no internet,
+# so a fresh init would hang trying to download from a Hub URL — we refuse to
+# start in that state and tell the operator exactly how to fix it.
+_OFFLINE_HINT = (
+    "RF-DETR has no cached COCO-pretrained weights and no resume checkpoint. "
+    "On offline compute nodes (Narval) a fresh init would hang trying to "
+    "download from the Hub. Pre-fetch the weights ONCE on the login node:\n"
+    "    bash scripts/fetch_pretrained.sh\n"
+    "This caches them under $VIGNOCR_PRETRAINED_DIR; the trainer then picks "
+    "them up automatically on every subsequent compute-node submission.\n"
+    "If you intentionally want online init (login-node smoke test), unset "
+    "the offline hint by exporting VIGNOCR_ALLOW_ONLINE_PRETRAIN=1."
+)
 
 # Augmentations that could flip green<->red band semantics. They live in the
 # config's `augmentation.forbidden` block and MUST stay off — asserted below.
@@ -160,6 +176,44 @@ def _coco_dataset_dir(ds: dict[str, Any]) -> Path:
     return root
 
 
+def _resolve_pretrained_weights(cfg: dict[str, Any]) -> str | None:
+    """Return a local file path to RF-DETR's COCO-pretrained backbone, or None.
+
+    Resolution order:
+        1. cfg.model.pretrain_weights (explicit)               -> use as-is
+        2. env VIGNOCR_PRETRAINED_RFDETR (explicit)            -> use as-is
+        3. $VIGNOCR_PRETRAINED_DIR/rfdetr_medium_coco.pth      -> use if exists
+        4. None  (rfdetr will then try the Hub — only OK on login node)
+
+    Cases (1)-(3) are CACHE HITS — the function returns a path to a real file.
+    Case (4) is the only path that needs internet; we let the caller decide
+    whether to allow it (compute-node jobs refuse, login-node smoke tests can
+    opt in via VIGNOCR_ALLOW_ONLINE_PRETRAIN=1).
+    """
+    explicit = (cfg.get("model") or {}).get("pretrain_weights")
+    if explicit:
+        p = Path(explicit)
+        if p.is_file():
+            return str(p)
+        log.warning("train.pretrained.missing", explicit=str(p))
+
+    env = os.environ.get("VIGNOCR_PRETRAINED_RFDETR")
+    if env:
+        p = Path(env)
+        if p.is_file():
+            return str(p)
+        log.warning("train.pretrained.env_missing", env=str(p))
+
+    cache_dir = os.environ.get("VIGNOCR_PRETRAINED_DIR")
+    if cache_dir:
+        for name in ("rfdetr_medium_coco.pth", "rf-detr-medium-coco.pth"):
+            p = Path(cache_dir) / name
+            if p.is_file():
+                return str(p)
+
+    return None
+
+
 # --------------------------------------------------------------------------- #
 # Entrypoint
 # --------------------------------------------------------------------------- #
@@ -204,6 +258,27 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     # 3) Build the model. num_classes from cfg.model -> dataset.class_names ->
     #    classes.yaml (resolved above) so the head width is always config-bound.
     resolution = int(mcfg.get("resolution", 640))
+
+    # OFFLINE INIT GATE: on a compute node, rfdetr's hub download has no network
+    # to reach. Prefer (in order): resume ckpt > cached pretrained > online init.
+    # The online path is opt-in (VIGNOCR_ALLOW_ONLINE_PRETRAIN=1) so we never
+    # silently waste a GPU allocation on a doomed hub call.
+    init_source: str
+    if resume:
+        pretrain_weights = str(resume)
+        init_source = "resume"
+    else:
+        cached = _resolve_pretrained_weights(cfg)
+        if cached:
+            pretrain_weights = cached
+            init_source = "cache"
+        elif os.environ.get("VIGNOCR_ALLOW_ONLINE_PRETRAIN"):
+            pretrain_weights = None
+            init_source = "online"
+            log.warning("train.online_pretrain", note="hub download enabled — only safe on login node")
+        else:
+            raise FileNotFoundError(_OFFLINE_HINT)
+
     log.info(
         "train.start",
         model=mcfg.get("name", "rfdetr_medium"),
@@ -213,11 +288,13 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
         batch_size=tcfg.get("batch_size"),
         dataset=str(dataset_dir),
         resume=str(resume) if resume else None,
+        init_source=init_source,
+        pretrain_weights=pretrain_weights,
     )
     model = RFDETRMedium(
         num_classes=num_classes,
         resolution=resolution,
-        pretrain_weights=str(resume) if resume else None,
+        pretrain_weights=pretrain_weights,
     )
 
     early = tcfg.get("early_stop", {})
@@ -248,10 +325,35 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     # Drop None-valued kwargs so we don't override rfdetr defaults with null.
     train_kwargs = {k: v for k, v in train_kwargs.items() if v is not None}
 
+    # SIGNATURE-BASED FILTER: different rfdetr wheels have slightly different
+    # train() signatures (1.1 vs 1.2 vs nightly). Rather than blow up on the
+    # first unknown kwarg, inspect the installed signature and drop kwargs the
+    # binding does not accept — logging what we dropped so the run is auditable.
+    try:
+        sig = inspect.signature(model.train)
+        accepts_var_kw = any(
+            p.kind is inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
+        )
+        if not accepts_var_kw:
+            allowed = set(sig.parameters.keys())
+            dropped = {k: v for k, v in train_kwargs.items() if k not in allowed}
+            if dropped:
+                log.warning(
+                    "train.kwargs.dropped_by_signature",
+                    dropped=sorted(dropped.keys()),
+                    rfdetr_signature=sorted(allowed),
+                )
+                train_kwargs = {k: v for k, v in train_kwargs.items() if k in allowed}
+    except (TypeError, ValueError):
+        # If signature inspection itself fails (C-extension, partial), fall
+        # through and rely on the TypeError handler below.
+        pass
+
     try:
         model.train(**train_kwargs)
     except TypeError as exc:
-        # Surface an actionable message if the installed rfdetr signature differs.
+        # Surface an actionable message if the installed rfdetr signature differs
+        # in a way that signature-filtering didn't catch (e.g. unexpected positional).
         raise TypeError(
             "rfdetr RFDETRMedium.train() rejected our kwargs "
             f"({sorted(train_kwargs)}). Align them with the installed rfdetr "

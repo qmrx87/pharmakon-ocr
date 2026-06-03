@@ -69,6 +69,33 @@ vignocr_require_env
 # cheap and login-node-safe (it only needs the repo root + makes scratch dirs).
 vignocr_paths
 vlog "account=$VIGNOCR_ACCOUNT  PI=$VIGNOCR_PI  ddp=$USE_DDP  test_only=$TEST_ONLY  from=$START_FROM"
+vlog "logs root: $VIGNOCR_LOGS_DIR  (per-stage/per-jobid)"
+
+# Pre-flight gate: detection training will fail offline if the COCO pretrained
+# weights aren't cached. Warn loudly here and offer the one-liner to fix it.
+PRETRAIN_CACHED="$(vignocr_pretrained_weights detection/rfdetr_medium)"
+if [[ -z "$PRETRAIN_CACHED" && -d "$SCRIPT_DIR/.." ]]; then
+  vwarn "No cached RF-DETR pretrained weights at \$VIGNOCR_PRETRAINED_DIR ($VIGNOCR_PRETRAINED_DIR)."
+  vwarn "Compute nodes have no internet — training will refuse to start. Run this NOW on the login node:"
+  vwarn "    bash $(realpath --relative-to="$PWD" "$SCRIPT_DIR/..")/scripts/fetch_pretrained.sh"
+  vwarn "Then re-run submit_all.sh. (To bypass for a login-node smoke test, export VIGNOCR_ALLOW_ONLINE_PRETRAIN=1.)"
+fi
+
+# Pre-create the centralized log directories so the #SBATCH --output paths
+# resolve at submit time. We use `mkdir -p` for each STAGE name; SLURM creates
+# the per-jobid subdir lazily when it opens the .out/.err.
+for entry in \
+    "01_validate" \
+    "02_train_detection" \
+    "02a_train_vignette" \
+    "03_eval_export_detection" \
+    "04_autolabel_ocr" \
+    "04_train_ocr" \
+    "05_finetune_ocr" \
+    "05_eval_ocr" \
+    "06_pipeline_benchmark"; do
+  mkdir -p "$VIGNOCR_LOGS_DIR/$entry"
+done
 
 # The detection training stage is swappable: single-A100 (02) or DDP (02b).
 DET_TRAIN_SCRIPT="02_train_detection.sbatch"
@@ -142,6 +169,9 @@ parse_jobid() { grep -oE '[0-9]+' | tail -n1; }
 
 # submit_stage <script> [dep_jobid] -> echoes the new job id.
 # When dep_jobid is set, the job is queued with --dependency=afterok:<dep>.
+# --chdir pins the job's CWD to the REPO ROOT — this is what makes the relative
+# `#SBATCH --output=logs/slurm/...` paths resolve consistently regardless of
+# where the user invoked submit_all.sh from.
 submit_stage() {
   local script="$SCRIPT_DIR/$1"; local dep="${2:-}"
   local dep_args=()
@@ -149,8 +179,10 @@ submit_stage() {
   local out jobid
   # --account on the CLI overrides the placeholder in the file. --export=ALL
   # forwards our VIGNOCR_* env (account/PI/module/path overrides) into the job.
+  # --chdir anchors %x/%j --output paths to the repo root.
   out="$(sbatch --parsable \
         --account="$VIGNOCR_ACCOUNT" \
+        --chdir="$VIGNOCR_REPO_ROOT" \
         --export=ALL \
         "${dep_args[@]}" \
         "$script")"

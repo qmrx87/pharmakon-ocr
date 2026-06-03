@@ -37,10 +37,22 @@ dependencies = [
 [project.optional-dependencies]
 # Installed on Narval/GPU hosts (CUDA wheels via module stack / wheelhouse).
 # Same range-relaxation as core: pip picks whatever the wheelhouse carries.
+#
+# IMPORTANT — wheelhouse availability is non-uniform:
+#   * `rfdetr` ships on PyPI (Roboflow) but is NOT mirrored to the Compute Canada
+#     wheelhouse as of 2026-06. On Narval, `pip install --no-index -e .[ml]` will
+#     therefore SKIP rfdetr; scripts/setup_narval.sh detects this and falls back
+#     to `pip install rfdetr ...` over the login-node proxy (login nodes DO have
+#     limited outbound HTTPS). DO NOT add a git+ placeholder here — pip rejects
+#     PEP 440 URLs with `<>` placeholders, and a real fork URL belongs in a lock
+#     file (uv/poetry), not in pyproject.toml.
+#   * `paddleocr` / `paddlepaddle` are likewise often missing from the wheelhouse.
+#     The OCR fine-tune (Stage C) is human-gated and will install them just-in-time
+#     before stage 05 — Stage A + B (detection) do NOT need them.
 ml = [
   "torch>=2.4",
   "torchvision>=0.19",
-  "rfdetr @ git+https://github.com/<your-fork-or-official>/rfdetr.git",
+  "rfdetr>=1.1",
   "onnx>=1.17",
   "onnxruntime>=1.20",
   "pycocotools>=2.0.6",

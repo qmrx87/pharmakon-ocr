@@ -5,3 +5,17 @@ venv/
 env/
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
+
+# Centralized SLURM job logs (per-stage / per-jobid) — generated artifacts.
+# Keep the dir itself trackable so the layout is obvious to new contributors;
+# everything inside is ignored.
+logs/slurm/**/*
+!logs/slurm/.gitkeep
+
+# Legacy %x-%j.out files that may still live at the repo root before this fix
+# is fully deployed. Safe to delete on disk; we don't want them committed.
+vignocr-*-*.out
+vignocr-*-*.err
+
+# Stray inline log files from the legacy bare --output pattern.
+err.log

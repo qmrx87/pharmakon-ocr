@@ -17,8 +17,13 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+# Centralized logs. SLURM writes its .out/.err here (flat, per stage); lib.sh's
+# vignocr_install_postmortem then creates logs/slurm/<stage>/<jobid>/ for copied
+# train logs + FAILED/DONE markers. The per-stage dir is pre-created by
+# submit_all.sh; --chdir anchors CWD to the repo root.
+#SBATCH --output=logs/slurm/02a_train_vignette/%x-%j.out
+#SBATCH --error=logs/slurm/02a_train_vignette/%x-%j.err
+#SBATCH --open-mode=append
 #SBATCH --requeue
 
 set -Eeuo pipefail
@@ -31,25 +36,20 @@ vignocr_preamble "02a_train_vignette"
 # Bind to Stage A; train.py resolves dataset (vignette -> data2/) + head width (3)
 # from this config.
 DET_CONFIG="${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_vignette}"
+export VIGNOCR_DETECTION_CONFIG="$DET_CONFIG"   # propagate to lib helpers
 
-# Resume from a prior interrupted run of THIS run dir, if a checkpoint exists in
-# the Stage A scratch tree. We probe both the canonical scratch (when the env
-# was overridden) and the default scratch root.
-_resume_probe() {
-  local rd_name; rd_name="$(basename "$VIGNOCR_RUN_DIR")"
-  for d in \
-      "${VIGNOCR_SCRATCH:-}/detection/rfdetr_vignette/$rd_name" \
-      "$VIGNOCR_SCRATCH_DIR/detection/rfdetr_vignette/$rd_name" \
-      "$VIGNOCR_RUN_DIR"; do
-    [[ -z "$d" ]] && continue
-    for ckpt in "$d/checkpoint_last.pth" "$d/last.ckpt" "$d/checkpoint.pth"; do
-      [[ -f "$ckpt" ]] && { echo "$ckpt"; return; }
-    done
-  done
-  echo ""
-}
-RESUME_CKPT="$(_resume_probe)"
+# Resume from a prior interrupted run of THIS run dir. The helper is config-aware
+# (reads cfg.train.checkpoint.dir for the Stage A tree); no per-stage probe needed.
+RESUME_CKPT="$(vignocr_find_resume "$VIGNOCR_RUN_DIR" "$DET_CONFIG")"
 [[ -n "$RESUME_CKPT" ]] && vlog "resuming vignette training from $RESUME_CKPT"
+
+# Offline-init: same offline-safe gate as Stage B (compute nodes have no internet).
+PRETRAIN_CACHE="$(vignocr_pretrained_weights "$DET_CONFIG")"
+if [[ -n "$PRETRAIN_CACHE" ]]; then
+  vlog "pretrained weights (cached, offline-safe): $PRETRAIN_CACHE"
+else
+  vwarn "no cached pretrained weights at \$VIGNOCR_PRETRAINED_DIR — run 'bash scripts/fetch_pretrained.sh' on the LOGIN node first to avoid a 6-min hub-download timeout on compute"
+fi
 
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-8}"
 vlog "GPU check before training:"

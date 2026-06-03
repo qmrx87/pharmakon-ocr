@@ -27,8 +27,13 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=120G
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+# Centralized logs. SLURM writes its .out/.err here (flat, per stage); lib.sh's
+# vignocr_install_postmortem then creates logs/slurm/<stage>/<jobid>/ for copied
+# train logs + FAILED/DONE markers. The per-stage dir is pre-created by
+# submit_all.sh; --chdir anchors CWD to the repo root.
+#SBATCH --output=logs/slurm/03_eval_export_detection/%x-%j.out
+#SBATCH --error=logs/slurm/03_eval_export_detection/%x-%j.err
+#SBATCH --open-mode=append
 
 set -Eeuo pipefail
 PROJECT_DIR="$HOME/projects/def-khenni/ydait/pharmakon-ocr"
@@ -39,20 +44,30 @@ source "$SLURM_DIR/lib.sh"
 vignocr_preamble "03_eval_export_detection"
 
 EVAL_SPLIT="${VIGNOCR_EVAL_SPLIT:-valid}"
+# Which detection config produced the checkpoint (so find_best searches the
+# right scratch tree). Default to Stage B; switch to Stage A by exporting
+# VIGNOCR_DETECTION_CONFIG=detection/rfdetr_vignette before sbatch.
+DET_CONFIG="${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}"
+export VIGNOCR_DETECTION_CONFIG="$DET_CONFIG"
 
 # --- locate the checkpoint to evaluate ---
 CKPT="${VIGNOCR_DET_CKPT:-}"
 if [[ -z "$CKPT" ]]; then
-  TRAIN_RUN="$(vignocr_latest_run 02_train_detection)"
-  [[ -n "$TRAIN_RUN" ]] || vdie "no detection training run found and VIGNOCR_DET_CKPT unset — run stage 02 first or pass VIGNOCR_DET_CKPT"
+  # When evaluating Stage A, look under 02a_train_vignette; else default to 02.
+  TRAIN_STAGE="${VIGNOCR_DETECTION_TRAIN_STAGE:-02_train_detection}"
+  case "$DET_CONFIG" in
+    *vignette*) TRAIN_STAGE="${VIGNOCR_DETECTION_TRAIN_STAGE:-02a_train_vignette}" ;;
+  esac
+  TRAIN_RUN="$(vignocr_latest_run "$TRAIN_STAGE")"
+  [[ -n "$TRAIN_RUN" ]] || vdie "no $TRAIN_STAGE run found and VIGNOCR_DET_CKPT unset — run the training stage first or pass VIGNOCR_DET_CKPT"
   if [[ -f "$TRAIN_RUN/BEST_CKPT" ]]; then
     CKPT="$(cat "$TRAIN_RUN/BEST_CKPT")"
   else
-    CKPT="$(vignocr_find_best "$TRAIN_RUN")"
+    CKPT="$(vignocr_find_best "$TRAIN_RUN" "$DET_CONFIG")"
   fi
 fi
 [[ -n "$CKPT" && -f "$CKPT" ]] || vdie "detection checkpoint not found: '${CKPT:-<empty>}'"
-vlog "evaluating checkpoint: $CKPT (split=$EVAL_SPLIT)"
+vlog "evaluating checkpoint: $CKPT (config=$DET_CONFIG split=$EVAL_SPLIT)"
 echo "$CKPT" > "$VIGNOCR_RUN_DIR/EVAL_CKPT"
 
 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | sed 's/^/    /' || vwarn "nvidia-smi unavailable"

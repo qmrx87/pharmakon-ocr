@@ -13,8 +13,13 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+# Centralized logs. SLURM writes its .out/.err here (flat, per stage); lib.sh's
+# vignocr_install_postmortem then creates logs/slurm/<stage>/<jobid>/ for copied
+# train logs + FAILED/DONE markers. The per-stage dir is pre-created by
+# submit_all.sh; --chdir anchors CWD to the repo root.
+#SBATCH --output=logs/slurm/05_finetune_ocr/%x-%j.out
+#SBATCH --error=logs/slurm/05_finetune_ocr/%x-%j.err
+#SBATCH --open-mode=append
 #SBATCH --requeue
 
 set -Eeuo pipefail

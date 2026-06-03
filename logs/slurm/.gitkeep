@@ -1,0 +1,4 @@
+# Centralized SLURM log root. The tree is created by submit_all.sh and the
+# sbatch jobs themselves write into logs/slurm/<stage>/. Everything under this
+# directory is .gitignored — only this .gitkeep file is tracked so the layout
+# is visible in fresh checkouts.

@@ -34,8 +34,13 @@
 #SBATCH --gres=gpu:a100:4
 #SBATCH --cpus-per-task=48
 #SBATCH --mem=498G
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+# Centralized logs. SLURM writes its .out/.err here (flat, per stage); lib.sh's
+# vignocr_install_postmortem then creates logs/slurm/<stage>/<jobid>/ for copied
+# train logs + FAILED/DONE markers. The per-stage dir is pre-created by
+# submit_all.sh; --chdir anchors CWD to the repo root.
+#SBATCH --output=logs/slurm/02_train_detection/%x-%j.out
+#SBATCH --error=logs/slurm/02_train_detection/%x-%j.err
+#SBATCH --open-mode=append
 #SBATCH --requeue
 
 set -Eeuo pipefail
@@ -46,6 +51,7 @@ source "$SLURM_DIR/lib.sh"
 vignocr_preamble "02_train_detection"   # share the detection stage namespace
 
 DET_CONFIG="${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}"
+export VIGNOCR_DETECTION_CONFIG="$DET_CONFIG"
 
 # Number of GPUs visible to this job (one process per GPU under torchrun).
 NPROC="${SLURM_GPUS_ON_NODE:-$(nvidia-smi -L 2>/dev/null | wc -l)}"
@@ -57,8 +63,15 @@ vlog "DDP topology: nodes=$NNODES gpus_per_node=$NPROC omp_threads=$OMP_NUM_THRE
 
 nvidia-smi --query-gpu=index,name,memory.total --format=csv,noheader | sed 's/^/    /' || vwarn "nvidia-smi unavailable"
 
-RESUME_CKPT="$(vignocr_find_resume "$VIGNOCR_RUN_DIR")"
+RESUME_CKPT="$(vignocr_find_resume "$VIGNOCR_RUN_DIR" "$DET_CONFIG")"
 [[ -n "$RESUME_CKPT" ]] && vlog "resuming from $RESUME_CKPT"
+
+PRETRAIN_CACHE="$(vignocr_pretrained_weights "$DET_CONFIG")"
+if [[ -n "$PRETRAIN_CACHE" ]]; then
+  vlog "pretrained weights (cached, offline-safe): $PRETRAIN_CACHE"
+else
+  vwarn "no cached pretrained weights at \$VIGNOCR_PRETRAINED_DIR — DDP training will refuse to start on compute nodes; run 'bash scripts/fetch_pretrained.sh' on the LOGIN node first"
+fi
 
 # Materialize the DDP launcher (generated artifact, kept in the run dir). It reads
 # config/run-dir/resume from argv and calls the documented run(). Every torchrun

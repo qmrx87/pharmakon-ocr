@@ -27,8 +27,13 @@
 #SBATCH --gres=gpu:a100:1
 #SBATCH --cpus-per-task=12
 #SBATCH --mem=120G
-#SBATCH --output=%x-%j.out
-#SBATCH --error=%x-%j.err
+# Centralized logs. SLURM writes its .out/.err here (flat, per stage); lib.sh's
+# vignocr_install_postmortem then creates logs/slurm/<stage>/<jobid>/ for copied
+# train logs + FAILED/DONE markers. The per-stage dir is pre-created by
+# submit_all.sh; --chdir anchors CWD to the repo root.
+#SBATCH --output=logs/slurm/02_train_detection/%x-%j.out
+#SBATCH --error=logs/slurm/02_train_detection/%x-%j.err
+#SBATCH --open-mode=append
 # Requeue automatically if the node is preempted/fails (resume picks up last.ckpt).
 #SBATCH --requeue
 
@@ -42,11 +47,24 @@ vignocr_preamble "02_train_detection"
 
 # Detection config NAME (load_config resolves it under configs/); overridable.
 DET_CONFIG="${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}"
+export VIGNOCR_DETECTION_CONFIG="$DET_CONFIG"   # propagate to lib helpers
 
-# Resume from a prior interrupted run of THIS run dir, if present (lib.sh knows
-# RF-DETR's scratch checkpoint layout + artifact names).
-RESUME_CKPT="$(vignocr_find_resume "$VIGNOCR_RUN_DIR")"
+# Resume from a prior interrupted run of THIS run dir, if present. The helper is
+# now CONFIG-AWARE — it reads cfg.train.checkpoint.dir from $DET_CONFIG so a new
+# detection config doesn't need a code change here.
+RESUME_CKPT="$(vignocr_find_resume "$VIGNOCR_RUN_DIR" "$DET_CONFIG")"
 [[ -n "$RESUME_CKPT" ]] && vlog "resuming detection training from $RESUME_CKPT"
+
+# Offline-init: surface the cached pretrained weights up front so the operator
+# sees whether the trainer will use them. If empty, the trainer will fall back
+# to VIGNOCR_ALLOW_ONLINE_PRETRAIN (compute-node jobs WITHOUT this env will fail
+# fast with a clear "run scripts/fetch_pretrained.sh" message — no 6-min hang).
+PRETRAIN_CACHE="$(vignocr_pretrained_weights "$DET_CONFIG")"
+if [[ -n "$PRETRAIN_CACHE" ]]; then
+  vlog "pretrained weights (cached, offline-safe): $PRETRAIN_CACHE"
+else
+  vwarn "no cached pretrained weights at \$VIGNOCR_PRETRAINED_DIR — if compute node, training will refuse to start; run 'bash scripts/fetch_pretrained.sh' on the LOGIN node first"
+fi
 
 # Pin determinism: thread count = allocated cores.
 export OMP_NUM_THREADS="${SLURM_CPUS_PER_TASK:-12}"

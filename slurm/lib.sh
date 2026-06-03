@@ -10,11 +10,20 @@
 #   • Narval module stack         : StdEnv + python + cuda (live names overridable)
 #   • storage tiers               : /home (code), ~/projects/def-$PI (data),
 #                                   ~/scratch (checkpoints + logs + run dirs)
+#   • centralized SLURM logs       : <repo>/logs/slurm/<stage>/<jobid>/ holds
+#                                   stdout/stderr + a copy of the train log
+#                                   (so post-mortem is ONE directory, not 3)
 #   • per-run reproducibility      : run dir = <timestamp>-<gitSHA>; snapshot the
 #                                   git SHA, the full configs/ tree, the seed,
 #                                   the resolved SBATCH env, and pip freeze
+#   • offline pretrained weights   : cache RF-DETR's COCO init on the LOGIN node
+#                                   (compute nodes have NO internet); the trainer
+#                                   reads from $VIGNOCR_PRETRAINED_DIR
 #   • resumability                 : stable "latest" symlink per stage so a job
 #                                   can be resubmitted and pick up its checkpoint
+#   • automatic post-mortem        : on FAILURE, copy the inline train_*.log into
+#                                   logs/slurm/<stage>/<jobid>/ and tail it to
+#                                   stderr so the .err file is self-contained
 #
 # NOTHING here imports Python or hardcodes a class name / threshold — those live
 # in configs/ and are read by the vignocr package. This library only wires the
@@ -76,6 +85,21 @@ vignocr_require_env() {
   fi
 }
 
+# vignocr_assert_account_resolved: the .sbatch directive block carries a literal
+# `--account=def-<PI>` placeholder. submit_all.sh overrides it on the command line
+# via `--account=$VIGNOCR_ACCOUNT`, but if a user runs `sbatch slurm/02_...sbatch`
+# DIRECTLY without that override, Slurm would have already rejected it pre-launch.
+# Inside the running job, SLURM_JOB_ACCOUNT exposes the resolved value — assert
+# it's not the placeholder (defense-in-depth; catches misconfigured submission).
+vignocr_assert_account_resolved() {
+  local acct="${SLURM_JOB_ACCOUNT:-}"
+  if [[ -n "$acct" && "$acct" == "def-<PI>" ]]; then
+    vdie "SLURM_JOB_ACCOUNT is the literal placeholder 'def-<PI>' — submit via submit_all.sh, or pass --account=\$VIGNOCR_ACCOUNT to sbatch directly"
+  fi
+  # If we ran outside Slurm (local invocation for testing), there's no
+  # SLURM_JOB_ACCOUNT; vignocr_require_env already covered the env contract.
+}
+
 # --------------------------------------------------------------------------- #
 # 2. Storage tiers (Narval). Override any of these via env if your layout
 #    differs. Defaults follow the Alliance convention.
@@ -111,7 +135,43 @@ vignocr_paths() {
   # location; eval.run(root=...) is also passed this explicitly.
   export VIGNOCR_DATA_ROOT="${VIGNOCR_DATA_ROOT:-$VIGNOCR_PROJECT_DIR/data}"
 
-  mkdir -p "$VIGNOCR_SCRATCH_DIR" "$VIGNOCR_RUNS_DIR" "$VIGNOCR_PROJECT_DIR"
+  # Centralized SLURM log root (one tree, per-stage, per-job). Lives in the REPO
+  # so post-mortem is `cd <repo>; ls logs/slurm/<stage>/` — no scratch hunting.
+  # Per-job dir is created lazily once we know the stage + job id.
+  export VIGNOCR_LOGS_DIR="${VIGNOCR_LOGS_DIR:-$VIGNOCR_REPO_ROOT/logs/slurm}"
+
+  # Pretrained-weight cache. Compute nodes have NO internet so RF-DETR (and any
+  # huggingface/torchvision hub call) MUST resolve from a local file. Pre-fetched
+  # on the login node by scripts/fetch_pretrained.sh into PROJECT space (backed up,
+  # shared across runs). Trainer code reads from here.
+  export VIGNOCR_PRETRAINED_DIR="${VIGNOCR_PRETRAINED_DIR:-$VIGNOCR_PROJECT_DIR/checkpoints/pretrained}"
+
+  # Bake an offline-by-default stance for every Hub-like cache the wheelhouse
+  # might consult — torchvision / huggingface / paddleocr all check these. This is
+  # belt-and-suspenders: the trainer should never NEED the network, but if a
+  # third-party dependency tries, we want a CLEAR error, not a 6-minute hang.
+  if [[ -z "${HF_HUB_OFFLINE:-}" ]]; then export HF_HUB_OFFLINE=1; fi
+  if [[ -z "${TRANSFORMERS_OFFLINE:-}" ]]; then export TRANSFORMERS_OFFLINE=1; fi
+  if [[ -z "${HF_DATASETS_OFFLINE:-}" ]]; then export HF_DATASETS_OFFLINE=1; fi
+  if [[ -z "${TORCH_HOME:-}" ]]; then export TORCH_HOME="$VIGNOCR_PRETRAINED_DIR/torch"; fi
+  if [[ -z "${HF_HOME:-}" ]]; then export HF_HOME="$VIGNOCR_PRETRAINED_DIR/huggingface"; fi
+
+  mkdir -p \
+    "$VIGNOCR_SCRATCH_DIR" "$VIGNOCR_RUNS_DIR" "$VIGNOCR_PROJECT_DIR" \
+    "$VIGNOCR_LOGS_DIR" "$VIGNOCR_PRETRAINED_DIR" \
+    "$TORCH_HOME" "$HF_HOME"
+}
+
+# vignocr_logs_dir <stage> [jobid] -> echo (and create) the central log dir for a
+# given stage + job. Pattern: <repo>/logs/slurm/<stage>/<jobid>/. When jobid is
+# absent (local run), uses "local-<pid>" so a manual invocation still lands in a
+# stable bucket. Called by vignocr_preamble — every stage gets one.
+vignocr_logs_dir() {
+  local stage="${1:?vignocr_logs_dir needs a stage name}"
+  local jid="${2:-${SLURM_JOB_ID:-local-$$}}"
+  local d="$VIGNOCR_LOGS_DIR/$stage/$jid"
+  mkdir -p "$d"
+  echo "$d"
 }
 
 # vignocr_dataset_link_target: echo the in-repo path the package resolves for the
@@ -320,70 +380,191 @@ vignocr_latest_run() {
   [[ -L "$link" || -d "$link" ]] && readlink -f "$link" || true
 }
 
-# vignocr_find_resume <run_dir>: echo a checkpoint to resume RF-DETR from, if a
-# prior run of THIS run_dir was interrupted (idempotent resubmission). The
-# detection trainer places checkpoints under $VIGNOCR_SCRATCH/<cfg dir>/<run name>
-# (NOT inside run_dir), so we search there as well as the run dir itself. RF-DETR
-# writes `checkpoint.pth` (latest) + `checkpoint_best_total.pth` (best); we prefer
-# the latest for resuming, falling back to the best, then any newest *.pth/*.pt.
+# vignocr_ckpt_dir_for_config <cfg_name>: echo the cfg.train.checkpoint.dir value
+# the detection trainer uses for a given config (e.g. "detection/rfdetr_medium"
+# -> "scratch/detection/rfdetr_medium"). Reads the YAML with PyYAML if available
+# else falls back to a stdlib grep. This is the SINGLE knob that decouples
+# resume/best discovery from any specific Stage (A, B, or future Stage).
+vignocr_ckpt_dir_for_config() {
+  local cfg="${1:?need a detection cfg name (e.g. detection/rfdetr_medium)}"
+  VIGNOCR_REPO_ROOT="$VIGNOCR_REPO_ROOT" VIGNOCR_CFG="$cfg" python - <<'PY' 2>/dev/null || true
+import os, re, sys
+root = os.environ["VIGNOCR_REPO_ROOT"]
+cfg  = os.environ["VIGNOCR_CFG"]
+p = os.path.join(root, "configs", f"{cfg}.yaml")
+default = "scratch/detection/" + cfg.split("/")[-1]
+try:
+    import yaml
+    with open(p, encoding="utf-8") as fh:
+        c = yaml.safe_load(fh) or {}
+    d = ((c.get("train") or {}).get("checkpoint") or {}).get("dir") or default
+    print(d)
+except Exception:
+    # stdlib-only fallback: find the FIRST `dir:` line under `checkpoint:`.
+    try:
+        with open(p, encoding="utf-8") as fh:
+            txt = fh.read()
+        m = re.search(r"checkpoint:\s*\n(?:[ \t]+.*\n)*?[ \t]+dir:\s*([^\s#]+)", txt)
+        print((m.group(1).strip("\"'") if m else default))
+    except Exception:
+        print(default)
+PY
+}
+
+# _vignocr_search_dirs <run_dir> <cfg_name>: emit (one per line) the dirs in which
+# RF-DETR may have left a checkpoint for this (run, config) pair.
+_vignocr_search_dirs() {
+  local run_dir="$1"; local cfg="$2"
+  local run_name; run_name="$(basename "$run_dir")"
+  local ckpt_rel; ckpt_rel="$(vignocr_ckpt_dir_for_config "$cfg")"
+  ckpt_rel="${ckpt_rel:-scratch/detection/${cfg##*/}}"
+  # Search both possible scratch roots + the run dir itself. Order matters: the
+  # FIRST hit wins, and the explicit scratch tree is preferred over the run dir.
+  printf '%s\n' \
+    "$VIGNOCR_SCRATCH/$ckpt_rel/$run_name" \
+    "$VIGNOCR_SCRATCH_DIR/$ckpt_rel/$run_name" \
+    "$run_dir/checkpoints" \
+    "$run_dir"
+}
+
+# vignocr_find_resume <run_dir> [cfg]: echo a checkpoint to resume RF-DETR from
+# (idempotent resubmission). RF-DETR writes `checkpoint.pth` (latest) and
+# `checkpoint_best_total.pth` (best) into output_dir; we prefer the latest for
+# resuming, falling back to the best, then any newest *.pth/*.pt. The cfg
+# argument selects the checkpoint subtree (default: detection/rfdetr_medium for
+# back-compat with stage 02).
 vignocr_find_resume() {
   local run_dir="${1:?need run_dir}"
-  local run_name; run_name="$(basename "$run_dir")"
-  local search_dirs=(
-    "$run_dir/checkpoints"
-    "$run_dir"
-    "$VIGNOCR_SCRATCH/detection/rfdetr_medium/$run_name"
-    "$VIGNOCR_SCRATCH_DIR/detection/rfdetr_medium/$run_name"
-  )
+  local cfg="${2:-${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}}"
   local d cand
-  for d in "${search_dirs[@]}"; do
+  while IFS= read -r d; do
     [[ -d "$d" ]] || continue
-    for cand in checkpoint.pth checkpoint_best_total.pth checkpoint_best.pth last.ckpt last.pth; do
+    for cand in checkpoint.pth checkpoint_last.pth checkpoint_best_total.pth checkpoint_best.pth last.ckpt last.pth; do
       if [[ -f "$d/$cand" ]]; then echo "$d/$cand"; return 0; fi
     done
-  done
+  done < <(_vignocr_search_dirs "$run_dir" "$cfg")
   # last resort: newest checkpoint-like file across the search dirs
-  for d in "${search_dirs[@]}"; do
+  while IFS= read -r d; do
     [[ -d "$d" ]] || continue
     cand="$(ls -1t "$d"/*.pth "$d"/*.pt "$d"/*.ckpt 2>/dev/null | head -n1 || true)"
     [[ -n "$cand" ]] && { echo "$cand"; return 0; }
-  done
+  done < <(_vignocr_search_dirs "$run_dir" "$cfg")
   echo ""
 }
 
-# vignocr_find_best <run_dir>: echo the BEST detector checkpoint produced by a
-# finished training run (for eval/export/benchmark to consume). Same search path
-# as resume but prefers the best-total artifact RF-DETR writes.
+# vignocr_find_best <run_dir> [cfg]: echo the BEST detector checkpoint produced by
+# a finished training run. Same search path as resume but prefers the best-total
+# artifact RF-DETR writes.
 vignocr_find_best() {
   local run_dir="${1:?need run_dir}"
-  local run_name; run_name="$(basename "$run_dir")"
+  local cfg="${2:-${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}}"
   local d cand
-  for d in "$run_dir/checkpoints" "$run_dir" \
-           "$VIGNOCR_SCRATCH/detection/rfdetr_medium/$run_name" \
-           "$VIGNOCR_SCRATCH_DIR/detection/rfdetr_medium/$run_name"; do
+  while IFS= read -r d; do
     [[ -d "$d" ]] || continue
     for cand in checkpoint_best_total.pth checkpoint_best.pth checkpoint_best_ema.pth best.pth best.ckpt; do
       if [[ -f "$d/$cand" ]]; then echo "$d/$cand"; return 0; fi
     done
-  done
-  for d in "$run_dir/checkpoints" "$run_dir" \
-           "$VIGNOCR_SCRATCH/detection/rfdetr_medium/$run_name" \
-           "$VIGNOCR_SCRATCH_DIR/detection/rfdetr_medium/$run_name"; do
+  done < <(_vignocr_search_dirs "$run_dir" "$cfg")
+  while IFS= read -r d; do
     [[ -d "$d" ]] || continue
     cand="$(ls -1t "$d"/*.pth "$d"/*.pt 2>/dev/null | head -n1 || true)"
     [[ -n "$cand" ]] && { echo "$cand"; return 0; }
-  done
+  done < <(_vignocr_search_dirs "$run_dir" "$cfg")
   echo ""
+}
+
+# vignocr_pretrained_weights <cfg>: echo the cached COCO-pretrained .pth that the
+# RF-DETR trainer should pass via `pretrain_weights=...`. The trainer code also
+# checks this — it's exposed here so the .sbatch can log "using cached weights:
+# <path>" up front. Returns empty if nothing is cached (the trainer will then
+# raise the offline-init error with a clear next-step).
+vignocr_pretrained_weights() {
+  local cfg="${1:-${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}}"
+  # The cfg name's LAST segment is the model variant (rfdetr_medium, rfdetr_vignette).
+  # Stage A and B share the same RF-DETR backbone, so they read the SAME file —
+  # callers can override via VIGNOCR_PRETRAINED_RFDETR.
+  local f="${VIGNOCR_PRETRAINED_RFDETR:-$VIGNOCR_PRETRAINED_DIR/rfdetr_medium_coco.pth}"
+  [[ -f "$f" ]] && echo "$f" || echo ""
+}
+
+# vignocr_install_postmortem <stage>: register an EXIT trap that, if the job
+# fails (any non-zero exit code, including SIGTERM/preempt), copies the run dir's
+# train log + last 200 lines into the central logs/slurm/<stage>/<jobid>/ folder
+# AND tails it to stderr. After this trap the .err file is self-contained — no
+# more "see $VIGNOCR_RUN_DIR/train_*.log" chases on scratch.
+vignocr_install_postmortem() {
+  local stage="${1:?need stage}"
+  local jlog="${VIGNOCR_JOB_LOG_DIR:-$(vignocr_logs_dir "$stage")}"
+  export VIGNOCR_JOB_LOG_DIR="$jlog"
+  # Stash the resolved scratch run_dir + a back-pointer the user can grep.
+  {
+    echo "stage:     $stage"
+    echo "job:       ${SLURM_JOB_ID:-<local>}"
+    echo "node:      $(hostname)"
+    echo "run_dir:   ${VIGNOCR_RUN_DIR:-<not-yet-created>}"
+    echo "started:   $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  } > "$jlog/BACKPOINTERS.txt"
+
+  # The EXIT trap fires on ANY exit (success or failure). On success, we just
+  # stamp DONE. On failure (rc != 0), copy the inline Python log so the .err is
+  # self-contained, and tail it to stderr so squeue -E / sacct see the cause.
+  vignocr_exit_trap() {
+    local rc=$?
+    local rundir="${VIGNOCR_RUN_DIR:-}"
+    if [[ "$rc" -eq 0 ]]; then
+      echo "ok: $(date -u +'%Y-%m-%dT%H:%M:%SZ')  rc=0" > "$jlog/DONE"
+      return 0
+    fi
+    # FAILURE path — never let cleanup itself fail (no `set -e` propagation here).
+    echo "fail: $(date -u +'%Y-%m-%dT%H:%M:%SZ')  rc=$rc" > "$jlog/FAILED"
+    if [[ -n "$rundir" && -d "$rundir" ]]; then
+      # Copy every *.log in the run dir into the central log dir.
+      local f
+      for f in "$rundir"/*.log; do
+        [[ -f "$f" ]] || continue
+        cp -f "$f" "$jlog/" 2>/dev/null || true
+      done
+      # And tail the most-likely-cause file to stderr so .err contains the actual
+      # Python traceback. Prefer the named train log; fall back to the newest *.log.
+      local primary
+      for f in train_detection.log train_vignette.log train_detection_ddp.log \
+               train_ocr.log autolabel.log eval_export_detection.log eval_ocr.log \
+               pipeline_benchmark.log finetune.log validate.log; do
+        if [[ -f "$rundir/$f" ]]; then primary="$rundir/$f"; break; fi
+      done
+      if [[ -z "${primary:-}" ]]; then
+        primary="$(ls -1t "$rundir"/*.log 2>/dev/null | head -n1 || true)"
+      fi
+      if [[ -n "${primary:-}" ]]; then
+        {
+          echo
+          echo "=============================================================="
+          echo " POST-MORTEM: last 200 lines of $primary"
+          echo "=============================================================="
+          tail -n 200 "$primary"
+          echo "=============================================================="
+          echo " Full log was copied to: $jlog/$(basename "$primary")"
+          echo "=============================================================="
+        } >&2
+      fi
+    fi
+    return 0   # don't shadow the original exit code
+  }
+  trap 'vignocr_exit_trap' EXIT
 }
 
 # vignocr_preamble <stage>: the standard opening every compute job runs.
 # Validates env, sets up paths, loads modules, activates venv, seeds, and
 # creates+returns a fresh run dir (exported as VIGNOCR_RUN_DIR). Resumption:
 # if VIGNOCR_RESUME_RUN_DIR is set, reuse it instead of minting a new one.
+# Also installs the post-mortem trap so a job failure leaves a SELF-CONTAINED
+# logs/slurm/<stage>/<jobid>/ directory with stderr + the train log copy.
 vignocr_preamble() {
   local stage="${1:?vignocr_preamble needs a stage name}"
   vignocr_require_env
+  vignocr_assert_account_resolved
   vignocr_paths
+  vignocr_install_postmortem "$stage"
   vignocr_load_modules
   vignocr_activate_venv
   # Point the package's config-resolved dataset root at the project-space data.
@@ -404,9 +585,21 @@ vignocr_preamble() {
     export VIGNOCR_RUN_DIR
     vlog "NEW run stage=$stage run_dir=$VIGNOCR_RUN_DIR"
   fi
+  # Re-stamp the back-pointer file now that VIGNOCR_RUN_DIR is finalized.
+  {
+    echo "stage:     $stage"
+    echo "job:       ${SLURM_JOB_ID:-<local>}"
+    echo "node:      $(hostname)"
+    echo "run_dir:   $VIGNOCR_RUN_DIR"
+    echo "started:   $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+  } > "$VIGNOCR_JOB_LOG_DIR/BACKPOINTERS.txt"
+  # Symlink the run_dir <-> log_dir so squeue/sacct users can hop either way.
+  ln -sfn "$VIGNOCR_JOB_LOG_DIR" "$VIGNOCR_RUN_DIR/slurm_logs"
+
   vignocr_snapshot_freeze "$VIGNOCR_RUN_DIR"
 
   export VIGNOCR_SEED
   VIGNOCR_SEED="$(cat "$VIGNOCR_RUN_DIR/seed.txt" 2>/dev/null || vignocr_resolve_seed)"
   vlog "seed=$VIGNOCR_SEED  data_active=${VIGNOCR_DATA_ACTIVE:-<data.yaml default>}"
+  vlog "logs/slurm: $VIGNOCR_JOB_LOG_DIR"
 }

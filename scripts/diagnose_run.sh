@@ -29,8 +29,14 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
 # shellcheck source=../slurm/lib.sh
 source "$REPO_ROOT/slurm/lib.sh"
 
-vignocr_require_env >/dev/null 2>&1 || true
-vignocr_paths
+# lib.sh installs `set -Eeuo pipefail` + an ERR trap that vdies on any non-zero
+# exit. That is correct for batch jobs but WRONG for a diagnostic tool — sacct
+# returning empty, `find` not matching, `grep` finding nothing, etc. all
+# become fatal. Relax both:
+#   * uninstall the ERR trap that lib.sh added
+#   * drop -e and -u (so missing optional vars / non-zero subcalls don't kill us)
+trap - ERR
+set +eu
 
 STAGE=""
 JOBID=""

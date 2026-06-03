@@ -492,10 +492,26 @@ vignocr_pretrained_weights() {
 # train log + last 200 lines into the central logs/slurm/<stage>/<jobid>/ folder
 # AND tails it to stderr. After this trap the .err file is self-contained — no
 # more "see $VIGNOCR_RUN_DIR/train_*.log" chases on scratch.
+#
+# IMPORTANT CLOSURE NOTE
+#   Bash trap handlers do NOT close over the locals of the enclosing function.
+#   When `trap 'fn' EXIT` fires, the outer function's stack frame is GONE — so
+#   referencing a local from there with `set -u` active crashes the trap and
+#   takes the whole script with it (we hit this: a job that completed
+#   successfully exited rc=1 because the trap blew up on its own `$jlog` ref,
+#   then SLURM marked the job FAILED and the afterok DAG cancelled everything
+#   downstream). The fix: persist EVERY value the trap needs as an EXPORTED
+#   environment variable, and reference it inside the trap with `${VAR:-...}`
+#   so a missing var degrades gracefully instead of unbound-erroring.
 vignocr_install_postmortem() {
   local stage="${1:?need stage}"
-  local jlog="${VIGNOCR_JOB_LOG_DIR:-$(vignocr_logs_dir "$stage")}"
+  local jlog
+  jlog="${VIGNOCR_JOB_LOG_DIR:-$(vignocr_logs_dir "$stage")}"
+  # Export EVERYTHING the trap will read — see the closure note above. These
+  # are read inside the trap as ${VIGNOCR_JOB_LOG_DIR:-} (defended against
+  # set -u even if some future caller unsets them).
   export VIGNOCR_JOB_LOG_DIR="$jlog"
+  export VIGNOCR_POSTMORTEM_STAGE="$stage"
   # Stash the resolved scratch run_dir + a back-pointer the user can grep.
   {
     echo "stage:     $stage"
@@ -505,52 +521,76 @@ vignocr_install_postmortem() {
     echo "started:   $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
   } > "$jlog/BACKPOINTERS.txt"
 
-  # The EXIT trap fires on ANY exit (success or failure). On success, we just
-  # stamp DONE. On failure (rc != 0), copy the inline Python log so the .err is
-  # self-contained, and tail it to stderr so squeue -E / sacct see the cause.
-  vignocr_exit_trap() {
-    local rc=$?
-    local rundir="${VIGNOCR_RUN_DIR:-}"
-    if [[ "$rc" -eq 0 ]]; then
-      echo "ok: $(date -u +'%Y-%m-%dT%H:%M:%SZ')  rc=0" > "$jlog/DONE"
-      return 0
-    fi
-    # FAILURE path — never let cleanup itself fail (no `set -e` propagation here).
-    echo "fail: $(date -u +'%Y-%m-%dT%H:%M:%SZ')  rc=$rc" > "$jlog/FAILED"
-    if [[ -n "$rundir" && -d "$rundir" ]]; then
-      # Copy every *.log in the run dir into the central log dir.
-      local f
-      for f in "$rundir"/*.log; do
-        [[ -f "$f" ]] || continue
-        cp -f "$f" "$jlog/" 2>/dev/null || true
-      done
-      # And tail the most-likely-cause file to stderr so .err contains the actual
-      # Python traceback. Prefer the named train log; fall back to the newest *.log.
-      local primary
-      for f in train_detection.log train_vignette.log train_detection_ddp.log \
-               train_ocr.log autolabel.log eval_export_detection.log eval_ocr.log \
-               pipeline_benchmark.log finetune.log validate.log; do
-        if [[ -f "$rundir/$f" ]]; then primary="$rundir/$f"; break; fi
-      done
-      if [[ -z "${primary:-}" ]]; then
-        primary="$(ls -1t "$rundir"/*.log 2>/dev/null | head -n1 || true)"
-      fi
-      if [[ -n "${primary:-}" ]]; then
-        {
-          echo
-          echo "=============================================================="
-          echo " POST-MORTEM: last 200 lines of $primary"
-          echo "=============================================================="
-          tail -n 200 "$primary"
-          echo "=============================================================="
-          echo " Full log was copied to: $jlog/$(basename "$primary")"
-          echo "=============================================================="
-        } >&2
-      fi
-    fi
-    return 0   # don't shadow the original exit code
-  }
   trap 'vignocr_exit_trap' EXIT
+}
+
+# vignocr_exit_trap: the EXIT trap body. Defined at FILE scope (not nested
+# inside vignocr_install_postmortem) so it cannot accidentally capture locals
+# from any caller. Every value it needs is read from an exported global with a
+# safe default. The function is hardened so that even if a sub-step here
+# crashes, the trap itself returns 0 — the original exit code of the script is
+# preserved automatically (bash EXIT semantics), and a misbehaving trap can
+# NEVER take down a successful job (the bug that caused this rewrite).
+vignocr_exit_trap() {
+  # Capture the original rc IMMEDIATELY — every command we run below would
+  # overwrite $?. We don't want any of those to leak into the script's exit.
+  local rc=$?
+  # Turn OFF strict mode inside the trap so an unset var or grep-no-match
+  # cannot escalate to a script-killing error. The script's own strict mode
+  # remains in effect for the original code; this is just the trap scope.
+  set +eu
+  local jlog="${VIGNOCR_JOB_LOG_DIR:-}"
+  local rundir="${VIGNOCR_RUN_DIR:-}"
+  # If the trap fired before vignocr_install_postmortem set things up, just
+  # exit with the original rc — there's nothing to record.
+  if [[ -z "$jlog" || ! -d "$jlog" ]]; then
+    return "$rc"
+  fi
+
+  local ts
+  ts="$(date -u +'%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+
+  if [[ "$rc" -eq 0 ]]; then
+    # SUCCESS path: stamp DONE. NEVER let this crash a successful job.
+    echo "ok: $ts  rc=0" > "$jlog/DONE" 2>/dev/null || true
+    return 0
+  fi
+
+  # FAILURE path — best-effort capture. Every command tolerates failure.
+  echo "fail: $ts  rc=$rc" > "$jlog/FAILED" 2>/dev/null || true
+
+  if [[ -n "$rundir" && -d "$rundir" ]]; then
+    # Copy every *.log in the run dir into the central log dir.
+    local f
+    for f in "$rundir"/*.log; do
+      [[ -f "$f" ]] || continue
+      cp -f "$f" "$jlog/" 2>/dev/null || true
+    done
+    # And tail the most-likely-cause file to stderr so .err contains the actual
+    # Python traceback. Prefer the named log; fall back to the newest *.log.
+    local primary=""
+    for f in train_detection.log train_vignette.log train_detection_ddp.log \
+             train_ocr.log autolabel.log eval_export_detection.log eval_ocr.log \
+             pipeline_benchmark.log finetune.log validate.log; do
+      if [[ -f "$rundir/$f" ]]; then primary="$rundir/$f"; break; fi
+    done
+    if [[ -z "$primary" ]]; then
+      primary="$(ls -1t "$rundir"/*.log 2>/dev/null | head -n1)" || primary=""
+    fi
+    if [[ -n "$primary" && -f "$primary" ]]; then
+      {
+        echo
+        echo "=============================================================="
+        echo " POST-MORTEM: last 200 lines of $primary"
+        echo "=============================================================="
+        tail -n 200 "$primary" 2>/dev/null || echo "(could not tail)"
+        echo "=============================================================="
+        echo " Full log was copied to: $jlog/$(basename "$primary")"
+        echo "=============================================================="
+      } >&2
+    fi
+  fi
+  return "$rc"
 }
 
 # vignocr_preamble <stage>: the standard opening every compute job runs.

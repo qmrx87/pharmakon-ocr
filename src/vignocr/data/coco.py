@@ -92,10 +92,19 @@ def _resolve_split_dir(root: Path, split: str) -> Path:
     return direct
 
 
-def load_split(root: Path | str, split: str) -> CocoSplit:
+def load_split(
+    root: Path | str,
+    split: str,
+    *,
+    dataset: dict[str, Any] | None = None,
+) -> CocoSplit:
     """Load one COCO split from ``<root>/<split>/_annotations.coco.json``.
 
     The category map is derived from the file's own ``categories`` array.
+    ``dataset`` (the resolved data.yaml block) supplies the aliases / ignore
+    list to apply at load time. Passing it explicitly is required when the
+    caller is loading a NON-active dataset (e.g. auto-label crops from ``real``
+    while the global ``active`` is still ``synthetic``).
 
     Raises:
         FileNotFoundError: if the split's COCO json is missing.
@@ -121,7 +130,7 @@ def load_split(root: Path | str, split: str) -> CocoSplit:
     # names (e.g. lot -> num_lot) and ignore non-schema categories (drug-labels,
     # text). Apply both here so every downstream consumer (validator, crops,
     # stats) sees the cleaned, schema-conformant view.
-    aliases, ignore = _coco_overrides()
+    aliases, ignore = _coco_overrides(dataset)
     if aliases or ignore:
         cat_id_to_name = {
             cid: aliases.get(name, name)
@@ -225,16 +234,24 @@ def crops_for_image(
     return dict(out)
 
 
-def _coco_overrides() -> tuple[dict[str, str], set[str]]:
-    """Read ``coco_aliases`` and ``coco_ignore`` from the active dataset's config.
+def _coco_overrides(
+    dataset: dict[str, Any] | None = None,
+) -> tuple[dict[str, str], set[str]]:
+    """Read ``coco_aliases`` and ``coco_ignore`` from the supplied dataset block.
 
-    Returns ``({}, set())`` if the config is unreadable so loading never fails
-    just because a knob is absent.
+    If ``dataset`` is ``None`` we fall back to the global active dataset for
+    backward-compat with code paths that don't yet thread the dataset through
+    (e.g. ad-hoc scripts). Returns ``({}, set())`` if the config is unreadable
+    so loading never fails just because a knob is absent.
     """
     try:
-        from vignocr.common import get_active_dataset
+        ds: dict[str, Any]
+        if dataset is not None:
+            ds = dataset
+        else:
+            from vignocr.common import get_active_dataset
 
-        ds = get_active_dataset()
+            ds = get_active_dataset()
         return dict(ds.get("coco_aliases") or {}), set(ds.get("coco_ignore") or [])
     except Exception:  # pragma: no cover - config is best-effort here
         return {}, set()

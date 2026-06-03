@@ -4,12 +4,15 @@
 # chained with --dependency=afterok so each stage runs only if the prior one
 # SUCCEEDED. Echoes every job id and the resulting dependency graph.
 #
-#   DAG:  01 validate
-#           └─afterok─> 02 train detection  (single A100, or 02b DDP)
-#                         └─afterok─> 03 eval + ONNX export
-#                                       └─afterok─> 04 train OCR
-#                                                     └─afterok─> 05 eval OCR
-#                                                                   └─afterok─> 06 pipeline benchmark
+#   DAG (3-stage):
+#         01 validate
+#           ├─afterok─> 02a Stage A — train vignette detector (data2/)   [parallel]
+#           └─afterok─> 02  Stage B — train field detector (data/)        [parallel]
+#                         └─afterok─> 03 eval + ONNX export (Stage B)
+#                                       └─afterok─> 04 Stage C bootstrap — PaddleOCR auto-label
+#                                                     ⏹  HUMAN REVIEW in Roboflow (DAG stops here)
+#                                                     └─manual─> 05 Stage C fine-tune (sbatch)
+#                                                                   └─manual─> 06 pipeline benchmark
 #
 # The account is injected from $VIGNOCR_ACCOUNT on EVERY submission (overriding
 # the `--account=def-<PI>` placeholder baked into each .sbatch file). The PI is
@@ -71,15 +74,24 @@ vlog "account=$VIGNOCR_ACCOUNT  PI=$VIGNOCR_PI  ddp=$USE_DDP  test_only=$TEST_ON
 DET_TRAIN_SCRIPT="02_train_detection.sbatch"
 [[ "$USE_DDP" -eq 1 ]] && DET_TRAIN_SCRIPT="02b_train_detection_ddp.sbatch"
 
-# Ordered DAG: "stage_number:script". afterok chains them in this order.
+# Main chain (afterok). Stage 02a Vignette runs in PARALLEL alongside 02 — it
+# is submitted as a sibling branch off 01 below (not in this serial list).
+# After 04 the DAG STOPS so a human can review the auto-labelled crops in
+# Roboflow. Stage 05 (finetune) and 06 (benchmark) are submitted manually after
+# review by re-invoking submit_all.sh with `--from 05`.
 STAGES=(
   "01:01_validate_data.sbatch"
   "02:$DET_TRAIN_SCRIPT"
   "03:03_eval_export_detection.sbatch"
-  "04:04_train_ocr.sbatch"
-  "05:05_eval_ocr.sbatch"
+  "04:04_autolabel_ocr.sbatch"
+  "05:05_finetune_ocr.sbatch"
   "06:06_pipeline_benchmark.sbatch"
 )
+# The stage that gates on a HUMAN review step. The main loop stops here unless
+# --from explicitly resumes after the gate.
+HUMAN_GATE_STAGE="05"
+# Parallel side-branch (runs concurrently with 02): vignette detector training.
+PARALLEL_BRANCHES=("02a:02a_train_vignette.sbatch")
 
 # --------------------------------------------------------------------------- #
 # --test-only: validate each job's #SBATCH directives WITHOUT submitting. This
@@ -90,7 +102,7 @@ if [[ "$TEST_ONLY" -eq 1 ]]; then
   if ! command -v sbatch >/dev/null 2>&1; then
     vwarn "sbatch not found (not on Narval?). Falling back to a static directive lint."
     rc=0
-    for entry in "${STAGES[@]}"; do
+    for entry in "${STAGES[@]}" "${PARALLEL_BRANCHES[@]}"; do
       script="$SCRIPT_DIR/${entry#*:}"
       [[ -f "$script" ]] || { vwarn "missing: $script"; rc=1; continue; }
       # Lint: must start with a shebang and carry the required directives.
@@ -107,7 +119,7 @@ if [[ "$TEST_ONLY" -eq 1 ]]; then
 
   vlog "validating every stage with 'sbatch --test-only' (account=$VIGNOCR_ACCOUNT)"
   rc=0
-  for entry in "${STAGES[@]}"; do
+  for entry in "${STAGES[@]}" "${PARALLEL_BRANCHES[@]}"; do
     script="$SCRIPT_DIR/${entry#*:}"
     if sbatch --test-only --account="$VIGNOCR_ACCOUNT" "$script"; then
       vlog "OK  ${entry#*:}"
@@ -153,6 +165,7 @@ PREV_JOBID=""            # the upstream dependency for the next stage
 SUBMITTED=()
 
 vlog "submitting DAG (afterok chain), starting at stage $START_FROM"
+GATE_HIT=0
 for entry in "${STAGES[@]}"; do
   num="${entry%%:*}"; script="${entry#*:}"
   # Skip stages before --from. The first submitted stage carries NO dependency
@@ -161,11 +174,29 @@ for entry in "${STAGES[@]}"; do
     vlog "skip stage $num ($script) — before --from $START_FROM"
     continue
   fi
+  # Stop at the human-review gate unless --from explicitly resumes past it.
+  if [[ "$num" == "$HUMAN_GATE_STAGE" && "$START_FROM" < "$HUMAN_GATE_STAGE" ]]; then
+    vlog "STOP at stage $HUMAN_GATE_STAGE — human review gate. Resume with: bash submit_all.sh --from $HUMAN_GATE_STAGE"
+    GATE_HIT=1
+    break
+  fi
   jid="$(submit_stage "$script" "$PREV_JOBID")"
   JOBID["$num"]="$jid"
   SUBMITTED+=("$num:$script:$jid:${PREV_JOBID:-<none>}")
   vlog "submitted stage $num: $script  job=$jid  afterok=${PREV_JOBID:-<none>}"
   PREV_JOBID="$jid"
+
+  # After the gating stage 01, fan out the parallel side-branches (e.g. 02a
+  # vignette training) so they run alongside the serial chain.
+  if [[ "$num" == "01" ]]; then
+    for sib in "${PARALLEL_BRANCHES[@]}"; do
+      sib_num="${sib%%:*}"; sib_script="${sib#*:}"
+      sib_jid="$(submit_stage "$sib_script" "$jid")"
+      JOBID["$sib_num"]="$sib_jid"
+      SUBMITTED+=("$sib_num:$sib_script:$sib_jid:$jid")
+      vlog "submitted parallel  $sib_num: $sib_script  job=$sib_jid  afterok=$jid"
+    done
+  fi
 done
 
 # --------------------------------------------------------------------------- #

@@ -95,13 +95,25 @@ def run(
     """
     ckpt = Path(ckpt)
     root = Path(root)
-    schema = get_classes()
-    cfg = load_config("detection/rfdetr_medium")
+    cfg = load_config(cfg_path)
+    ds = resolve_dataset(cfg)
+    num_classes, class_names = resolve_class_schema(cfg, ds)
     iou_thr = float(cfg.get("eval", {}).get("iou_threshold", 0.5))
     score_thr = float(cfg.get("eval", {}).get("score_threshold", 0.30))
 
-    split_dir = _split_dir(root, split)
-    ann_path = split_dir / _coco_filename()
+    # Business-critical localization recall is a Stage B concept (classes.yaml).
+    # Stage A (dataset-bound class list) has no business-critical fields.
+    business_critical: list[str] = []
+    if not cfg.get("dataset") or cfg.get("dataset") in {"real", "synthetic"}:
+        try:
+            business_critical = [
+                n for n in get_classes().business_critical_fields if n in class_names
+            ]
+        except Exception:  # noqa: BLE001
+            business_critical = []
+
+    split_dir = _split_dir(root, split, cfg)
+    ann_path = split_dir / _coco_filename(cfg)
     if not ann_path.exists():
         raise FileNotFoundError(f"COCO annotations not found: {ann_path}")
     coco = _load_coco(ann_path)
@@ -116,9 +128,8 @@ def run(
     # Lazy: construct the detector (this is where torch/onnxruntime loads).
     from vignocr.detection.infer import Detector
 
-    detector = Detector(ckpt, cfg_path="detection/rfdetr_medium", score_threshold=score_thr)
+    detector = Detector(ckpt, cfg_path=cfg_path, score_threshold=score_thr)
 
-    business_critical = list(schema.business_critical_fields)
     predictions: list[dict[str, Any]] = []  # COCO-result format for pycocotools
     loc_recall_per_image: list[dict[str, Any]] = []
     all_detected_names: set[str] = set()
@@ -160,7 +171,7 @@ def run(
         loc_recall_per_image.append({"image_id": img_id, **rec})
 
     # COCO mAP via pycocotools (lazy import).
-    coco_metrics = _coco_eval(coco, predictions, catid2name, schema)
+    coco_metrics = _coco_eval(coco, predictions, catid2name)
 
     # Dataset-level localization recall: which business-critical classes were
     # localized in *every* image where they are present (the strict gate view).
@@ -263,7 +274,6 @@ def _coco_eval(
     coco: dict[str, Any],
     predictions: list[dict[str, Any]],
     catid2name: dict[int, str],
-    schema: Any,
 ) -> dict[str, Any]:
     """Compute COCO mAP / per-class AP. Returns zeros (with a warning) if no preds."""
     if not predictions:

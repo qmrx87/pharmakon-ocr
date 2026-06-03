@@ -91,6 +91,15 @@ class VignocrPipeline:
         self.detector_path: str | None = self.cfg.get("detector_path")
         self.recognizer_path: str | None = self.cfg.get("recognizer_path")
         self.nomenclature_csv: str | None = self.cfg.get("nomenclature_csv")
+        # Stage A (vignette detector) is OPTIONAL. When configured, extract()
+        # runs it first to crop the vignette region out of a wider drug-box
+        # photo; when None, the input is assumed to already be a vignette
+        # (the back-compat behaviour synthetic tests rely on).
+        self.vignette_detector_path: str | None = self.cfg.get("vignette_detector_path")
+        self.vignette_cfg_path: str = self.cfg.get(
+            "vignette_cfg_path", "detection/rfdetr_vignette"
+        )
+        self.vignette_class: str = self.cfg.get("vignette_class", "entete")
         self.default_flow: Flow = self.cfg.get("default_flow", "selling")
         self._preprocess_cfg: dict[str, Any] = self.cfg.get("preprocess", {}) or {}
         self._root: str = self._resolve_root()
@@ -98,6 +107,7 @@ class VignocrPipeline:
 
         # --- lazily-built handles ---------------------------------------------
         self._detector: Any | None = None
+        self._vignette_detector: Any | None = None
         self._recognizer: Any | None = None
         self._nomenclature_index: Any | None = None
         self._resolved_backend: str | None = None  # "real" | "stub", set on first use
@@ -135,6 +145,13 @@ class VignocrPipeline:
 
         pil = self._as_pil(image)
         image_id = resolve_image_id(image, self._root)
+
+        # 0) STAGE A — vignette region detection (optional, configured via
+        #    `vignette_detector_path`). Crops a wider drug-box photo down to the
+        #    vignette region before the field detector runs. When unconfigured,
+        #    the input is treated as an already-cropped vignette (back-compat).
+        with _timed(timings, "vignette"):
+            pil = self._pre_crop_vignette(pil, image_id)
 
         # 1) Page-level preprocess (hue-preserving). Keep the original for any
         #    stub content-hashing (already resolved image_id above) and band read.
@@ -326,6 +343,63 @@ class VignocrPipeline:
         anchor_value = anchor.value if anchor else None
         row, _conf = nomenclature_match.find(anchor_value, index, cfg)
         return nomenclature_correct.apply(fields, row, cfg)
+
+    def _pre_crop_vignette(self, pil: Image.Image, image_id: str) -> Image.Image:
+        """Stage A: crop the input down to the detected vignette region.
+
+        Pass-through when no Stage A model is configured (the synthetic test
+        path). When configured, lazy-loads a ``Detector`` bound to the vignette
+        config, picks the highest-scoring ``vignette_class`` (default ``entete``)
+        detection, and returns the cropped PIL image. If no qualifying box is
+        found, falls back to the original image and logs.
+        """
+        if not self.vignette_detector_path:
+            return pil
+        if self._vignette_detector is None:
+            try:
+                from vignocr.detection.infer import Detector
+            except ImportError:
+                log.warning("pipeline.vignette_skipped_no_ml", image_id=image_id)
+                return pil
+            self._vignette_detector = Detector(
+                self.vignette_detector_path, cfg_path=self.vignette_cfg_path
+            )
+            log.info(
+                "pipeline.vignette_loaded",
+                path=self.vignette_detector_path,
+                cfg=self.vignette_cfg_path,
+                target_class=self.vignette_class,
+            )
+
+        try:
+            dets = self._vignette_detector.detect(pil)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("pipeline.vignette_inference_failed", image_id=image_id, err=str(exc))
+            return pil
+
+        targets = [d for d in dets if d.name == self.vignette_class]
+        if not targets:
+            log.warning(
+                "pipeline.vignette_not_found",
+                image_id=image_id,
+                target=self.vignette_class,
+                n_detections=len(dets),
+            )
+            return pil
+        best = max(targets, key=lambda d: d.score)
+        x0 = max(0, int(round(best.bbox.x)))
+        y0 = max(0, int(round(best.bbox.y)))
+        x1 = min(pil.width, int(round(best.bbox.x + best.bbox.w)))
+        y1 = min(pil.height, int(round(best.bbox.y + best.bbox.h)))
+        if x1 <= x0 or y1 <= y0:
+            return pil
+        log.info(
+            "pipeline.vignette_cropped",
+            image_id=image_id,
+            bbox=(x0, y0, x1, y1),
+            score=round(best.score, 3),
+        )
+        return pil.crop((x0, y0, x1, y1))
 
     def _canonicalize_money(
         self, fields: dict[str, FieldRead], checksum: Any

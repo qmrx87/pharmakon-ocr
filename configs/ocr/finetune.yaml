@@ -1,0 +1,65 @@
+# =============================================================================
+# configs/ocr/finetune.yaml  —  STAGE C: PaddleOCR recognition fine-tune.
+#
+# Consumes the human-corrected dataset produced by `vignocr.ocr.autolabel`
+# (per-split paddle.txt: "<rel_crop_path>\t<text>") and fine-tunes the
+# PaddleOCR text-recognition model. Outputs a checkpoint the inference layer
+# loads via `configs/ocr/recognition.yaml` (set `backend_checkpoint:` to it).
+# =============================================================================
+schema_version: 1
+
+# Where the corrected dataset lives. Each split has its own subdir with crops/
+# + paddle.txt; a single char_dict.txt at the root supplies the vocab.
+dataset:
+  root: ocr_dataset                # produced by stage 04; overridden by env on Narval
+  splits: { train: train, val: valid, test: test }
+  paddle_label: paddle.txt
+  char_dict: char_dict.txt
+  min_corrected_ratio: 0.50         # warn if more than 50% of labels still carry the AUTO_ prefix
+
+# PaddleOCR recognition fine-tune knobs (mapped 1:1 into the PPOCR YAML the
+# entry point writes at runtime — see src/vignocr/ocr/finetune.py).
+model:
+  algorithm: CRNN
+  backbone: MobileNetV3
+  pretrained: en_PP-OCRv4_rec_train  # PaddleOCR's English+latin v4 weights as a base
+  max_text_length: 80
+  image_shape: [3, 48, 320]           # C, H, W expected by PP-OCRv4 rec
+
+train:
+  epochs: 80
+  batch_size: 128
+  num_workers: 4
+  optimizer: Adam
+  lr: 0.001
+  lr_scheduler: Cosine
+  weight_decay: 1.0e-5
+  warmup_epoch: 2
+  clip_grad: 5.0
+  seed: 1337
+  save_epoch_step: 2
+  eval_epoch_step: 1
+  early_stop:
+    enabled: true
+    metric: acc
+    mode: max
+    patience: 10
+    min_delta: 0.005
+
+augment:
+  # Recognition augmentation: only photometric + tiny geometric to match real
+  # cashier-camera capture conditions. Critically NEVER any colour-space op
+  # that could shift the displayed string (e.g. invert / grayscale).
+  brightness: 0.20
+  contrast: 0.20
+  gaussian_blur_p: 0.10
+  jpeg_quality: [70, 100]
+  rotate_deg: 2
+  forbidden:
+    invert: false
+    to_grayscale: false
+    color_jitter_strong: false
+
+eval:
+  metric: acc                       # PaddleOCR rec uses character / word accuracy
+  log_every: 50

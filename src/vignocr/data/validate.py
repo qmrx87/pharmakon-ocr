@@ -94,9 +94,17 @@ def check_integrity(root: Path | str) -> IntegrityReport:
     bbox_tol = float(ds.get("bbox_clamp_tolerance", 0.0))
     bc_severity = str(ds.get("business_critical_present_severity", "warn" if is_real else "error"))
 
-    schema = get_classes()
-    schema_names = set(schema.names)
-    business_critical = set(schema.business_critical_fields)
+    # Schema source:
+    #   - Stage-bound datasets (vignette has its own class_names) -> use those.
+    #   - Default (synthetic / real for fields) -> classes.yaml.
+    ds_class_names = ds.get("class_names")
+    if ds_class_names:
+        schema_names = set(ds_class_names)
+        business_critical: set[str] = set()  # not a Stage A concept
+    else:
+        schema = get_classes()
+        schema_names = set(schema.names)
+        business_critical = set(schema.business_critical_fields)
 
     report = IntegrityReport(root=str(root), dataset_name=str(ds.get("name", "")))
 
@@ -105,7 +113,7 @@ def check_integrity(root: Path | str) -> IntegrityReport:
     loaded = {}
     for split in split_dirs:
         try:
-            loaded[split] = load_split(root, split)
+            loaded[split] = load_split(root, split, dataset=ds)
             report.splits_checked.append(split)
         except FileNotFoundError as exc:
             report.add_warning(f"split {split!r} not found: {exc}")

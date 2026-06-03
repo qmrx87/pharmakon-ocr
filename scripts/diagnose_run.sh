@@ -22,21 +22,35 @@
 #   bash scripts/diagnose_run.sh --all           # dump everything (verbose)
 # =============================================================================
 
+# Diagnostic tools must be MAXIMALLY tolerant: missing env vars, missing log
+# dirs, empty sacct results — none of these should crash the script. We start
+# with full strict mode, source lib.sh for vlog/vwarn helpers, then DROP all
+# strict-mode footguns so we can examine partial / broken state.
 set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." >/dev/null 2>&1 && pwd)"
+
+# DEFAULT PATHS — set BEFORE sourcing lib.sh so even if lib.sh's vignocr_paths
+# bails (e.g. VIGNOCR_ACCOUNT unset → `${VAR:?}` exits the function early),
+# diagnose still has working paths. The logs dir lives in the repo (project
+# space), so we can derive it from the script's own location with zero env.
+export VIGNOCR_REPO_ROOT="${VIGNOCR_REPO_ROOT:-$REPO_ROOT}"
+export VIGNOCR_LOGS_DIR="${VIGNOCR_LOGS_DIR:-$REPO_ROOT/logs/slurm}"
+export VIGNOCR_SCRATCH_DIR="${VIGNOCR_SCRATCH_DIR:-$HOME/scratch/vignocr}"
+export VIGNOCR_RUNS_DIR="${VIGNOCR_RUNS_DIR:-$VIGNOCR_SCRATCH_DIR/runs}"
+export VIGNOCR_SCRATCH="${VIGNOCR_SCRATCH:-$VIGNOCR_SCRATCH_DIR}"
+
 # shellcheck source=../slurm/lib.sh
 source "$REPO_ROOT/slurm/lib.sh"
 
-# lib.sh installs `set -Eeuo pipefail` + an ERR trap that vdies on any non-zero
-# exit. That is correct for batch jobs but WRONG for a diagnostic tool — sacct
-# returning empty, `find` not matching, `grep` finding nothing, etc. all
-# become fatal. Relax both:
-#   * uninstall the ERR trap that lib.sh added
-#   * drop -e and -u (so missing optional vars / non-zero subcalls don't kill us)
+# Drop strict mode + the ERR trap lib.sh installed. We need to be forgiving:
+#   * sacct returning empty (set +e or pipefail would propagate)
+#   * `find` finding nothing
+#   * unset optional vars (set +u)
 trap - ERR
 set +eu
+set +o pipefail 2>/dev/null || true
 
 STAGE=""
 JOBID=""
@@ -85,10 +99,11 @@ echo
 have_sacct=0
 if command -v sacct >/dev/null 2>&1; then have_sacct=1; fi
 if [[ "$have_sacct" -eq 1 ]]; then
+  SACCT_WINDOW="${VIGNOCR_SACCT_WINDOW:-7days}"   # override via env for longer history
   echo "================================================================"
-  echo " Recent VignOCR jobs (sacct, last 24h)"
+  echo " Recent VignOCR jobs (sacct, last $SACCT_WINDOW)"
   echo "================================================================"
-  sacct --user="$USER" --starttime=now-24hours \
+  sacct --user="$USER" --starttime="now-$SACCT_WINDOW" \
         --name=vignocr-01-validate,vignocr-02-train-det,vignocr-02a-train-vignette,vignocr-02b-train-ddp,vignocr-03-eval-export,vignocr-04-autolabel,vignocr-04-train-ocr,vignocr-05-eval-ocr,vignocr-05-finetune-ocr,vignocr-06-bench \
         --format=JobID,JobName%30,State,ExitCode,Start,Elapsed,Reason%40 \
         --noheader 2>/dev/null | sed 's/^/  /' || echo "  (sacct returned no rows)"
@@ -110,24 +125,45 @@ SLURM_ERR=""  # the SLURM .err path
 JOB_STATE=""  # from sacct, if available
 JOB_REASON="" # from sacct, if available
 
-if [[ -n "$JOBID" && -z "$STAGE" && "$have_sacct" -eq 1 ]]; then
-  # Look up the job name and infer the stage from it.
-  jn="$(sacct -j "$JOBID" -o JobName --noheader 2>/dev/null | head -n1 | xargs || true)"
+if [[ -n "$JOBID" && -z "$STAGE" ]]; then
+  jn=""
+  # Try sacct first (most reliable when the job is in the accounting DB).
+  if [[ "$have_sacct" -eq 1 ]]; then
+    # `-S now-7days` because sacct's default window is only "today" — older
+    # jobs (yesterday's failure for example) would return empty otherwise.
+    jn="$(sacct -j "$JOBID" -S now-7days -o JobName --noheader -P 2>/dev/null \
+            | head -n1 | tr -d '[:space:]' || true)"
+    # If `-P` (parsable) wasn't honored, retry without it.
+    if [[ -z "$jn" ]]; then
+      jn="$(sacct -j "$JOBID" -S now-7days -o JobName --noheader 2>/dev/null \
+              | head -n1 | tr -d '[:space:]' || true)"
+    fi
+  fi
+  # Fallback: derive STAGE from any matching SLURM .out/.err file under
+  # logs/slurm/<stage>/*-<JOBID>.{out,err}. Works even if sacct is offline.
+  if [[ -z "$jn" ]]; then
+    found_file="$(find "$VIGNOCR_LOGS_DIR" -maxdepth 2 \( -name "*-${JOBID}.out" -o -name "*-${JOBID}.err" \) 2>/dev/null | head -n1)"
+    if [[ -n "$found_file" ]]; then
+      STAGE="$(basename "$(dirname "$found_file")")"
+    fi
+  fi
   case "$jn" in
-    vignocr-01-validate)         STAGE=01_validate ;;
-    vignocr-02-train-det)        STAGE=02_train_detection ;;
-    vignocr-02a-train-vignette)  STAGE=02a_train_vignette ;;
-    vignocr-02b-train-ddp)       STAGE=02_train_detection ;;
-    vignocr-03-eval-export)      STAGE=03_eval_export_detection ;;
-    vignocr-04-autolabel)        STAGE=04_autolabel_ocr ;;
-    vignocr-04-train-ocr)        STAGE=04_train_ocr ;;
-    vignocr-05-eval-ocr)         STAGE=05_eval_ocr ;;
-    vignocr-05-finetune-ocr)     STAGE=05_finetune_ocr ;;
-    vignocr-06-bench)            STAGE=06_pipeline_benchmark ;;
+    vignocr-01-validate*)         STAGE=01_validate ;;
+    vignocr-02-train-det*)        STAGE=02_train_detection ;;
+    vignocr-02a-train-vignette*)  STAGE=02a_train_vignette ;;
+    vignocr-02b-train-ddp*)       STAGE=02_train_detection ;;
+    vignocr-03-eval-export*)      STAGE=03_eval_export_detection ;;
+    vignocr-04-autolabel*)        STAGE=04_autolabel_ocr ;;
+    vignocr-04-train-ocr*)        STAGE=04_train_ocr ;;
+    vignocr-05-eval-ocr*)         STAGE=05_eval_ocr ;;
+    vignocr-05-finetune-ocr*)     STAGE=05_finetune_ocr ;;
+    vignocr-06-bench*)            STAGE=06_pipeline_benchmark ;;
   esac
 fi
 
 # Pick the SLURM .out/.err for the (STAGE, JOBID) pair, falling back as needed.
+# Also resolve RUN_DIR from BACKPOINTERS.txt (new jobs) OR by grep'ing the .err
+# (legacy jobs that ran before the post-mortem trap landed).
 _match_slurm_files() {
   local stage="$1"; local jid="$2"; local sd="$VIGNOCR_LOGS_DIR/$stage"
   if [[ -n "$jid" ]]; then
@@ -138,7 +174,18 @@ _match_slurm_files() {
     SLURM_ERR="$(ls -1t "$sd"/*.err 2>/dev/null | head -n1 || true)"
   fi
   LOG_DIR="$sd${jid:+/$jid}"
-  [[ -f "$LOG_DIR/BACKPOINTERS.txt" ]] && RUN_DIR="$(awk '/^run_dir:/{print $2}' "$LOG_DIR/BACKPOINTERS.txt")" || true
+  # New format: BACKPOINTERS.txt written by vignocr_install_postmortem.
+  if [[ -f "$LOG_DIR/BACKPOINTERS.txt" ]]; then
+    RUN_DIR="$(awk '/^run_dir:/{print $2}' "$LOG_DIR/BACKPOINTERS.txt" 2>/dev/null)"
+  fi
+  # Legacy fallback: grep the run_dir out of the .err file's vignocr_preamble
+  # line. Works for every job that ever sourced lib.sh, even pre-trap ones.
+  if [[ -z "$RUN_DIR" && -n "$SLURM_ERR" && -f "$SLURM_ERR" ]]; then
+    RUN_DIR="$(grep -oE 'run_dir=[^ ]+' "$SLURM_ERR" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  fi
+  if [[ -z "$RUN_DIR" && -n "$SLURM_OUT" && -f "$SLURM_OUT" ]]; then
+    RUN_DIR="$(grep -oE 'run_dir=[^ ]+' "$SLURM_OUT" 2>/dev/null | tail -n1 | cut -d= -f2- || true)"
+  fi
 }
 
 if [[ -n "$STAGE" ]]; then
@@ -175,10 +222,11 @@ else
   fi
 fi
 
-# Pull state + reason from sacct if we know the job id.
+# Pull state + reason from sacct if we know the job id. -S now-7days widens
+# the default "today only" window so failures from earlier sessions are findable.
 if [[ -n "$JOBID" && "$have_sacct" -eq 1 ]]; then
-  JOB_STATE="$(sacct -j "$JOBID" --noheader -o State 2>/dev/null | head -n1 | xargs || true)"
-  JOB_REASON="$(sacct -j "$JOBID" --noheader -o Reason%80 2>/dev/null | head -n1 | xargs || true)"
+  JOB_STATE="$(sacct -j "$JOBID" -S now-7days --noheader -o State 2>/dev/null | head -n1 | xargs || true)"
+  JOB_REASON="$(sacct -j "$JOBID" -S now-7days --noheader -o Reason%80 2>/dev/null | head -n1 | xargs || true)"
 fi
 
 # --------------------------------------------------------------------------- #

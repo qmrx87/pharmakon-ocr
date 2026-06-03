@@ -5,7 +5,7 @@
     "description": "VignOCR synthetic fixture (generated)",
     "contributor": "",
     "url": "",
-    "date_created": "2026-06-03T21:20:32+00:00"
+    "date_created": "2026-06-03T23:18:47+00:00"
   },
   "licenses": [
     {
@@ -108,7 +108,7 @@
       "file_name": "synthetic_train_00000.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 1,
@@ -116,7 +116,7 @@
       "file_name": "synthetic_train_00001.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 2,
@@ -124,7 +124,7 @@
       "file_name": "synthetic_train_00002.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 3,
@@ -132,7 +132,7 @@
       "file_name": "synthetic_train_00003.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 4,
@@ -140,7 +140,7 @@
       "file_name": "synthetic_train_00004.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 5,
@@ -148,7 +148,7 @@
       "file_name": "synthetic_train_00005.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 6,
@@ -156,7 +156,7 @@
       "file_name": "synthetic_train_00006.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 7,
@@ -164,7 +164,7 @@
       "file_name": "synthetic_train_00007.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 8,
@@ -172,7 +172,7 @@
       "file_name": "synthetic_train_00008.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 9,
@@ -180,7 +180,7 @@
       "file_name": "synthetic_train_00009.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 10,
@@ -188,7 +188,7 @@
       "file_name": "synthetic_train_00010.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 11,
@@ -196,7 +196,7 @@
       "file_name": "synthetic_train_00011.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     }
   ],
   "annotations": [

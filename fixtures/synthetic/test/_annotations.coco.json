@@ -5,7 +5,7 @@
     "description": "VignOCR synthetic fixture (generated)",
     "contributor": "",
     "url": "",
-    "date_created": "2026-06-03T21:20:32+00:00"
+    "date_created": "2026-06-03T23:18:47+00:00"
   },
   "licenses": [
     {
@@ -108,7 +108,7 @@
       "file_name": "synthetic_test_00016.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 1,
@@ -116,7 +116,7 @@
       "file_name": "synthetic_test_00017.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 2,
@@ -124,7 +124,7 @@
       "file_name": "synthetic_test_00018.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     },
     {
       "id": 3,
@@ -132,7 +132,7 @@
       "file_name": "synthetic_test_00019.jpg",
       "height": 640,
       "width": 640,
-      "date_captured": "2026-06-03T21:20:32+00:00"
+      "date_captured": "2026-06-03T23:18:47+00:00"
     }
   ],
   "annotations": [

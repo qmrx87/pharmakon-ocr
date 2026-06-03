@@ -33,9 +33,10 @@
 #SBATCH --requeue
 
 set -Eeuo pipefail
-SBATCH_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]:-$0}")" >/dev/null 2>&1 && pwd)"
-# shellcheck source=lib.sh
-source "$SBATCH_DIR/lib.sh"
+PROJECT_DIR="$HOME/projects/def-khenni/ydait/pharmakon-ocr"
+SLURM_DIR="$PROJECT_DIR/slurm"
+
+source "$SLURM_DIR/lib.sh"
 
 vignocr_preamble "02_train_detection"
 

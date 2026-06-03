@@ -15,35 +15,39 @@ requires-python = ">=3.10"
 readme = "README.md"
 license = { text = "Proprietary" }
 
-# Core (light, CPU, pinned) — everything except the heavy ML stack.
+# Core (light, CPU). Pins are RANGES (not ==) so the same pyproject works against
+# both PyPI (local dev: gets the latest 2.x) AND the Compute Canada wheelhouse on
+# Narval (which carries CC-rebuilt wheels at specific versions — see avail_wheels).
+# Tighten back to == once a deployable lockfile (uv/poetry) is added.
 dependencies = [
-  "pyyaml==6.0.2",
-  "pydantic==2.9.2",
-  "pydantic-settings==2.6.1",
-  "numpy==2.1.3",
-  "pillow==11.0.0",
-  "python-dateutil==2.9.0.post0",
-  "rapidfuzz==3.10.1",
-  "openpyxl==3.1.5",
-  "fastapi==0.115.5",
-  "uvicorn[standard]==0.32.1",
-  "python-multipart==0.0.17",
-  "structlog==24.4.0",
+  "pyyaml>=6.0,<7",
+  "pydantic>=2.9,<3",
+  "pydantic-settings>=2.6,<3",
+  "numpy>=2.1,<3",
+  "pillow>=11.0,<12",
+  "python-dateutil>=2.9,<3",
+  "rapidfuzz>=3.10,<4",
+  "openpyxl>=3.1,<4",
+  "fastapi>=0.115,<1",
+  "uvicorn[standard]>=0.32,<1",
+  "python-multipart>=0.0.17",
+  "structlog>=24.4,<26",
 ]
 
 [project.optional-dependencies]
 # Installed on Narval/GPU hosts (CUDA wheels via module stack / wheelhouse).
+# Same range-relaxation as core: pip picks whatever the wheelhouse carries.
 ml = [
-  "torch==2.4.1",
-  "torchvision==0.19.1",
-  "rfdetr==1.1.0",
-  "onnx==1.17.0",
-  "onnxruntime==1.20.1",
-  "pycocotools==2.0.8",
-  "albumentations==1.4.21",
-  "opencv-python-headless==4.10.0.84",
-  "paddleocr==2.9.1",
-  "paddlepaddle==2.6.2",
+  "torch>=2.4",
+  "torchvision>=0.19",
+  "rfdetr>=1.1",
+  "onnx>=1.17",
+  "onnxruntime>=1.20",
+  "pycocotools>=2.0.6",
+  "albumentations>=1.4",
+  "opencv-python-headless>=4.10",
+  "paddleocr>=2.9",
+  "paddlepaddle>=2.6",
 ]
 dev = [
   "pytest==8.3.4",

@@ -1,0 +1,67 @@
+# Build context hygiene for the VignOCR serving image.
+# Only pyproject.toml, README.md, src/ and configs/ are needed (see Dockerfile);
+# everything below is excluded to keep the context small and the image clean.
+
+# --- VCS ---
+.git
+.gitignore
+.gitattributes
+
+# --- Python caches / build artifacts ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+build/
+dist/
+.eggs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- Virtualenvs / local envs ---
+.venv/
+venv/
+env/
+.env
+.env.*
+
+# --- Tests & dev tooling (not needed at runtime) ---
+tests/
+.pre-commit-config.yaml
+
+# --- Docs / notebooks ---
+docs/
+*.md
+!README.md
+*.ipynb
+.ipynb_checkpoints/
+
+# --- Data, fixtures & model artifacts (mounted at runtime, never baked in) ---
+data/
+data2/
+fixtures/
+runs/
+outputs/
+models/
+*.onnx
+*.pt
+*.pth
+*.ckpt
+*.xlsx
+*.zip
+*.tar
+*.tar.gz
+
+# --- Docker / CI / editor noise ---
+Dockerfile
+.dockerignore
+docker-compose*.yml
+.github/
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

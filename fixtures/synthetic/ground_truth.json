@@ -1,0 +1,2182 @@
+{
+  "synthetic_train_00000.jpg": {
+    "fields": {
+      "ppa": "341.34",
+      "prix": "306.49",
+      "shp": "34.85",
+      "num_enregistrement": "68/90/46B599/749",
+      "num_lot": "Y10W2",
+      "date_fab": "2022-11",
+      "date_exp": "2025-11",
+      "product_name": "TAHOR",
+      "dci": "ATORVASTATINE",
+      "dosage": "20 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        49,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        107,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        108,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        46
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00001.jpg": {
+    "fields": {
+      "ppa": "2485.89",
+      "prix": "2436.37",
+      "shp": "49.52",
+      "num_enregistrement": "64/89/85P909/413",
+      "num_lot": "WBZH6SL",
+      "date_fab": "2023-11",
+      "date_exp": "2027-11",
+      "product_name": "AUGMENTIN",
+      "dci": "AMOXICILLINE/AC. CLAV.",
+      "dosage": "1 G",
+      "forme": "COMPRIME",
+      "laboratoire": "GSK"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        80,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        153,
+        16
+      ],
+      "dosage": [
+        114,
+        58,
+        27,
+        15
+      ],
+      "forme": [
+        114,
+        73,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        88,
+        32,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        103,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        119,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        134,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        149,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        61
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00002.jpg": {
+    "fields": {
+      "ppa": "2030.33",
+      "prix": "1983.75",
+      "shp": "46.58",
+      "num_enregistrement": "25/70/08C538/992",
+      "num_lot": "CE3DBNNG",
+      "date_fab": "2023-04",
+      "date_exp": "2026-04",
+      "product_name": "VENTOLINE",
+      "dci": "SALBUTAMOL",
+      "dosage": "100 UG/DOSE",
+      "forme": "AEROSOL",
+      "laboratoire": "GSK"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        74,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        90,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        90,
+        16
+      ],
+      "forme": [
+        114,
+        73,
+        64,
+        15
+      ],
+      "laboratoire": [
+        114,
+        88,
+        32,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        103,
+        123,
+        16
+      ],
+      "prix": [
+        114,
+        119,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        134,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        149,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        69
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        52
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        52
+      ]
+    }
+  },
+  "synthetic_train_00003.jpg": {
+    "fields": {
+      "ppa": "1959.57",
+      "prix": "1930.69",
+      "shp": "28.88",
+      "num_enregistrement": "42/55/73E562/046",
+      "num_lot": "WPMMD86B",
+      "date_fab": "2024-09",
+      "date_exp": "2028-09",
+      "product_name": "TAHOR",
+      "dci": "ATORVASTATINE",
+      "dosage": "20 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        49,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        107,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        121,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        73
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00004.jpg": {
+    "fields": {
+      "ppa": "2324.92",
+      "prix": "2320.53",
+      "shp": "4.39",
+      "num_enregistrement": "82/32/33F725/133",
+      "num_lot": "LXFN",
+      "date_fab": "2024-09",
+      "date_exp": "2027-09",
+      "product_name": "TAHOR",
+      "dci": "ATORVASTATINE",
+      "dosage": "20 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        49,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        107,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        121,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        82,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        36
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00005.jpg": {
+    "fields": {
+      "ppa": "1843.58",
+      "prix": "1794.35",
+      "shp": "49.23",
+      "num_enregistrement": "44/77/91D440/294",
+      "num_lot": "D6Z1E",
+      "date_fab": "2022-06",
+      "date_exp": "2026-06",
+      "product_name": "LEVOTHYROX",
+      "dci": "LEVOTHYROXINE",
+      "dosage": "75 UG",
+      "forme": "COMPRIME",
+      "laboratoire": "MERCK"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        90,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        108,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        44,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        49,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        123,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        43
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00006.jpg": {
+    "fields": {
+      "ppa": "1695.69",
+      "prix": "1669.34",
+      "shp": "26.35",
+      "num_enregistrement": "24/17/61R627/439",
+      "num_lot": "TLRY2N3L",
+      "date_fab": "2024-10",
+      "date_exp": "2028-10",
+      "product_name": "EFFERALGAN",
+      "dci": "PARACETAMOL",
+      "dosage": "500 MG",
+      "forme": "COMPRIME EFFERV.",
+      "laboratoire": "UPSA"
+    },
+    "reimbursability": "green",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        84,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        98,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        54,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        123,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        40,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        64
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00007.jpg": {
+    "fields": {
+      "ppa": "2038.48",
+      "prix": "2019.09",
+      "shp": "19.39",
+      "num_enregistrement": "76/24/82R314/781",
+      "num_lot": "X2ZRW511",
+      "date_fab": "2022-10",
+      "date_exp": "2025-10",
+      "product_name": "GLUCOPHAGE",
+      "dci": "METFORMINE",
+      "dosage": "850 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "MERCK"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        93,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        87,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        54,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        49,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        68
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00008.jpg": {
+    "fields": {
+      "ppa": "337.91",
+      "prix": "318.01",
+      "shp": "19.90",
+      "num_enregistrement": "58/88/00P087/861",
+      "num_lot": "81JC91",
+      "date_fab": "2022-11",
+      "date_exp": "2025-11",
+      "product_name": "AUGMENTIN",
+      "dci": "AMOXICILLINE/AC. CLAV.",
+      "dosage": "1 G",
+      "forme": "COMPRIME",
+      "laboratoire": "GSK"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        80,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        153,
+        16
+      ],
+      "dosage": [
+        114,
+        58,
+        27,
+        15
+      ],
+      "forme": [
+        114,
+        73,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        88,
+        32,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        103,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        119,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        134,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        149,
+        108,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        50
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00009.jpg": {
+    "fields": {
+      "ppa": "1247.93",
+      "prix": "1241.35",
+      "shp": "6.58",
+      "num_enregistrement": "91/27/45A336/951",
+      "num_lot": "GK9C8V",
+      "date_fab": "2021-03",
+      "date_exp": "2023-03",
+      "product_name": "KARDEGIC",
+      "dci": "ACETYLSALICYLATE",
+      "dosage": "75 MG",
+      "forme": "SACHET",
+      "laboratoire": "SANOFI"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        68,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        126,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        56,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        51,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        82,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        53
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00010.jpg": {
+    "fields": {
+      "ppa": "1809.96",
+      "prix": "1784.82",
+      "shp": "25.14",
+      "num_enregistrement": "62/58/94T021/179",
+      "num_lot": "LSRC5",
+      "date_fab": "2024-12",
+      "date_exp": "2027-12",
+      "product_name": "TAHOR",
+      "dci": "ATORVASTATINE",
+      "dosage": "20 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        49,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        107,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        42
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_train_00011.jpg": {
+    "fields": {
+      "ppa": "483.07",
+      "prix": "438.02",
+      "shp": "45.05",
+      "num_enregistrement": "54/45/80F803/173",
+      "num_lot": "AWNL",
+      "date_fab": "2022-02",
+      "date_exp": "2024-02",
+      "product_name": "AMLOR",
+      "dci": "AMLODIPINE",
+      "dosage": "5 MG",
+      "forme": "GELULE",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        50,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        81,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        38,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        53,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        121,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        108,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        40
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_valid_00012.jpg": {
+    "fields": {
+      "ppa": "1572.22",
+      "prix": "1541.21",
+      "shp": "31.01",
+      "num_enregistrement": "76/31/07R232/696",
+      "num_lot": "Y67NEEE",
+      "date_fab": "2022-06",
+      "date_exp": "2025-06",
+      "product_name": "TAHOR",
+      "dci": "ATORVASTATINE",
+      "dosage": "20 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "green",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        49,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        107,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        57
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_valid_00013.jpg": {
+    "fields": {
+      "ppa": "866.23",
+      "prix": "865.18",
+      "shp": "1.05",
+      "num_enregistrement": "31/07/69A955/117",
+      "num_lot": "UVKA3W8",
+      "date_fab": "2023-01",
+      "date_exp": "2027-01",
+      "product_name": "LASILIX",
+      "dci": "FUROSEMIDE",
+      "dosage": "40 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "SANOFI"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        51,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        85,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        51,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        82,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        108,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        61
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_valid_00014.jpg": {
+    "fields": {
+      "ppa": "296.14",
+      "prix": "251.03",
+      "shp": "45.11",
+      "num_enregistrement": "97/06/97P820/446",
+      "num_lot": "327MA8MN",
+      "date_fab": "2021-07",
+      "date_exp": "2023-07",
+      "product_name": "AUGMENTIN",
+      "dci": "AMOXICILLINE/AC. CLAV.",
+      "dosage": "1 G",
+      "forme": "COMPRIME",
+      "laboratoire": "GSK"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        80,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        153,
+        16
+      ],
+      "dosage": [
+        114,
+        58,
+        27,
+        15
+      ],
+      "forme": [
+        114,
+        73,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        88,
+        32,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        103,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        119,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        134,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        149,
+        108,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        70
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_valid_00015.jpg": {
+    "fields": {
+      "ppa": "1008.19",
+      "prix": "981.51",
+      "shp": "26.68",
+      "num_enregistrement": "53/28/77F979/228",
+      "num_lot": "M4B4WGXV",
+      "date_fab": "2021-12",
+      "date_exp": "2024-12",
+      "product_name": "CLAMOXYL",
+      "dci": "AMOXICILLINE",
+      "dosage": "500 MG",
+      "forme": "GELULE",
+      "laboratoire": "GSK"
+    },
+    "reimbursability": "green",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        74,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        91,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        54,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        53,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        32,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        121,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        73
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_test_00016.jpg": {
+    "fields": {
+      "ppa": "262.31",
+      "prix": "235.99",
+      "shp": "26.32",
+      "num_enregistrement": "74/75/42T221/105",
+      "num_lot": "BD22C2AC",
+      "date_fab": "2024-12",
+      "date_exp": "2027-12",
+      "product_name": "INEXIUM",
+      "dci": "ESOMEPRAZOLE",
+      "dosage": "40 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "ASTRAZENECA"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        56,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        105,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        95,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        100,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        108,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        68
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_test_00017.jpg": {
+    "fields": {
+      "ppa": "1778.79",
+      "prix": "1757.06",
+      "shp": "21.73",
+      "num_enregistrement": "57/71/65E091/470",
+      "num_lot": "00CKKGR3",
+      "date_fab": "2022-03",
+      "date_exp": "2024-03",
+      "product_name": "TAHOR",
+      "dci": "ATORVASTATINE",
+      "dosage": "20 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "PFIZER"
+    },
+    "reimbursability": "red",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        49,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        107,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        47,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        121,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        66
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_test_00018.jpg": {
+    "fields": {
+      "ppa": "1866.27",
+      "prix": "1852.91",
+      "shp": "13.36",
+      "num_enregistrement": "08/47/79E167/844",
+      "num_lot": "7UFU7TKG",
+      "date_fab": "2022-03",
+      "date_exp": "2026-03",
+      "product_name": "INEXIUM",
+      "dci": "ESOMEPRAZOLE",
+      "dosage": "40 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "ASTRAZENECA"
+    },
+    "reimbursability": "green",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        56,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        105,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        95,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        121,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        67
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        51
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        51
+      ]
+    }
+  },
+  "synthetic_test_00019.jpg": {
+    "fields": {
+      "ppa": "1928.29",
+      "prix": "1898.77",
+      "shp": "29.52",
+      "num_enregistrement": "00/07/30P126/317",
+      "num_lot": "E9412",
+      "date_fab": "2021-04",
+      "date_exp": "2023-04",
+      "product_name": "LASILIX",
+      "dci": "FUROSEMIDE",
+      "dosage": "40 MG",
+      "forme": "COMPRIME",
+      "laboratoire": "SANOFI"
+    },
+    "reimbursability": "orange",
+    "boxes": {
+      "entete": [
+        20,
+        20,
+        600,
+        600
+      ],
+      "color_band": [
+        20,
+        37,
+        600,
+        583
+      ],
+      "product_name": [
+        114,
+        27,
+        51,
+        15
+      ],
+      "dci": [
+        114,
+        42,
+        85,
+        15
+      ],
+      "dosage": [
+        114,
+        57,
+        46,
+        15
+      ],
+      "forme": [
+        114,
+        72,
+        73,
+        15
+      ],
+      "laboratoire": [
+        114,
+        87,
+        51,
+        15
+      ],
+      "num_enregistrement": [
+        114,
+        102,
+        122,
+        16
+      ],
+      "prix": [
+        114,
+        118,
+        108,
+        15
+      ],
+      "shp": [
+        114,
+        133,
+        90,
+        15
+      ],
+      "ppa": [
+        114,
+        148,
+        116,
+        15
+      ],
+      "vin": [
+        24,
+        26,
+        87,
+        588
+      ],
+      "num_lot": [
+        27,
+        30,
+        15,
+        41
+      ],
+      "date_fab": [
+        46,
+        30,
+        15,
+        52
+      ],
+      "date_exp": [
+        65,
+        30,
+        15,
+        52
+      ]
+    }
+  }
+}

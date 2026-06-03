@@ -1,0 +1,65 @@
+# =============================================================================
+# configs/classes.yaml  —  SINGLE SOURCE OF TRUTH for the VignOCR field schema.
+# =============================================================================
+# Everything reads from here: synthetic generation, COCO loading/validation,
+# RF-DETR class list, OCR field routing, parsing, nomenclature correction,
+# serving response schema. Do NOT hardcode class names anywhere else.
+#
+# The COCO loader maps each annotation to a class by NAME (via the COCO file's
+# own `categories` array), never by a hardcoded id — so this stays robust to
+# whatever category ids the real Roboflow export assigns.
+# =============================================================================
+schema_version: 1
+
+# `id` is the contiguous training id (0..N-1) used by the detector head.
+classes:
+  # ---- 12 semantic fields (the annotation target the dataset is being labeled to) ----
+  - { id: 0,  name: ppa,                type: money, orientation: horizontal, groups: [money, checksum] }
+  - { id: 1,  name: prix,               type: money, orientation: horizontal, groups: [money, checksum] }
+  - { id: 2,  name: shp,                type: money, orientation: horizontal, groups: [money, checksum] }
+  - { id: 3,  name: num_enregistrement, type: code,  orientation: horizontal, groups: [anchor] }
+  - { id: 4,  name: num_lot,            type: code,  orientation: vertical,   groups: [vin] }
+  - { id: 5,  name: date_fab,           type: date,  orientation: vertical,   groups: [vin] }
+  - { id: 6,  name: date_exp,           type: date,  orientation: vertical,   groups: [vin] }
+  - { id: 7,  name: product_name,       type: text,  orientation: horizontal, groups: [identity] }
+  - { id: 8,  name: dci,                type: text,  orientation: horizontal, groups: [identity, dispensing] }
+  - { id: 9,  name: dosage,             type: text,  orientation: horizontal, groups: [identity, dispensing] }
+  - { id: 10, name: forme,              type: text,  orientation: horizontal, groups: [identity, dispensing] }
+  - { id: 11, name: laboratoire,        type: text,  orientation: horizontal, groups: [identity] }
+  # ---- structural / auxiliary classes (kept from the real annotation + reimbursability) ----
+  - { id: 12, name: entete,             type: region,      orientation: horizontal, groups: [structural] }
+  - { id: 13, name: vin,                type: region,      orientation: vertical,   groups: [structural] }
+  - { id: 14, name: color_band,         type: region,      orientation: diagonal,   groups: [reimbursability] }
+  # ---- real-annotation classes (Algeria-Drug-label v1, 2026-06) ----
+  # ppa_shp is a SINGLE box covering prix + shp (e.g. "248.50 + 1.50"); parsing
+  # splits it into prix and shp FieldReads so the prix+shp=ppa checksum still works.
+  # tr is the Tarif de Référence (annotated as `tarif_ref`); aliased in data.yaml.
+  - { id: 15, name: ppa_shp,            type: money_combo, orientation: horizontal, groups: [money, checksum_source] }
+  - { id: 16, name: tr,                 type: money,       orientation: horizontal, groups: [money, never_correct] }
+
+# ---- Role sets consumed by parsing / correction / abstention (NAMES only) ----
+roles:
+  money_fields:        [ppa, prix, shp, tr, ppa_shp]
+  checksum:            { prix: prix, shp: shp, ppa: ppa }   # invariant: prix + shp == ppa
+  combined_money:      [ppa_shp]                            # one box -> two values; parsing splits into prix+shp
+  rotated_fields:      [num_lot, date_fab, date_exp, vin]   # orientation-correct before OCR
+  date_fields:         [date_fab, date_exp]
+  code_fields:         [num_enregistrement, num_lot]
+  anchor_field:        num_enregistrement                   # key into the nomenclature CSV
+  identity_fields:     [product_name, dci, dosage, forme, laboratoire]  # repairable from nomenclature
+  dispensing_critical: [dci, dosage, forme]                 # conflict => flag, never silently overwrite
+  never_correct:       [ppa, tr]                            # vignette-specific; nomenclature NEVER overwrites
+  reimbursability_region: color_band
+  body_region:         entete
+  rotated_strip:       vin
+
+# Detector eval MUST report localization recall on these (the business rule depends on them).
+business_critical_fields: [ppa, prix, shp, num_enregistrement, num_lot]
+
+# Reimbursability head: band colour -> CHIFA eligibility (a distinct signal, not OCR).
+reimbursability:
+  region: color_band
+  colors:
+    green:  { eligible: true,  label: "Remboursable (CHIFA)" }
+    red:    { eligible: false, label: "Non remboursable" }
+    orange: { eligible: null,  label: "À vérifier" }   # variant seen on some vignettes -> abstain

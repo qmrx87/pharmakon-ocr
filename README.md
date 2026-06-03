@@ -1,0 +1,211 @@
+# VignOCR
+
+**Enterprise OCR for Algerian pharmaceutical vignettes.**
+
+VignOCR turns a photo of a medication *vignette* (the price/identity sticker on
+Algerian drug boxes) into a structured, validated, business-ready record: the
+prices (`ppa`, `prix`, `shp`), the registration code (`num_enregistrement`), the
+lot/batch and manufacture/expiry dates (`num_lot`, `date_fab`, `date_exp`), the
+product identity (`product_name`, `dci`, `dosage`, `forme`, `laboratoire`), and a
+**reimbursability** signal read from the colour band (green = remboursable CHIFA,
+red = non remboursable, orange = à vérifier).
+
+It is built to be **trusted in a pharmacy**: money is exact to the centime, a
+`prix + shp == ppa` checksum guards the numbers, the registration code is matched
+against the national **nomenclature** to repair identity fields, and anything the
+model is not sure about **abstains** ("à vérifier") rather than guessing — with a
+stricter bar when *selling* than when *receiving stock*.
+
+---
+
+## What it is (and isn't)
+
+- **Is:** a two-stage *detect-then-read* document-intelligence pipeline with a
+  deterministic, medically-aware post-processing core (parsing → checksum →
+  nomenclature correction → reimbursability), served behind a small FastAPI.
+- **Is:** runnable **on CPU today** against a synthetic fixture — no GPU, no
+  `torch`, no internet required to develop, test, and demo the whole flow.
+- **Isn't:** a black box. Every class, threshold, regex, and correction policy
+  lives in `configs/` (single source of truth). Nothing is hardcoded.
+- **Isn't:** trained on real data *yet* — the real annotated dataset does not
+  match the target schema. See **the data-reconciliation note** below.
+
+---
+
+## Pipeline at a glance
+
+```
+ image (vignette photo)
+   │
+   ▼
+ preprocess ─────────────────────────────────────────────────┐
+   │                                                          │
+   ▼                                                          │
+ [Stage 1] DETECT  (RF-DETR medium)                           │  configs/classes.yaml
+   │  → boxes labelled with the 15-class schema               │  is the single source
+   │    (12 fields + entete / vin / color_band)               │  of truth for every
+   ▼                                                          │  stage shown here.
+ per-field  orient + crop   (rotate vertical vin strip upright)│
+   │                                                          │
+   ▼                                                          │
+ [Stage 2] READ  (OCR recognizer, per-field, with confidence) │
+   │  → FieldRead{value, raw, confidence, status, source}     │
+   ▼                                                          │
+ PARSE  (Decimal money / dates / codes)  ────────────────────┤  configs/parsing/
+   │  → checksum  prix + shp == ppa  (verify · repair · flag) │  fields.yaml
+   │  → PPA disambiguation  (final "= XXX,XX DA")             │
+   ▼                                                          │
+ NOMENCLATURE correct  (match num_enregistrement) ───────────┤  configs/nomenclature/
+   │  → repair identity · NEVER touch ppa/tr                  │  correction.yaml
+   │  → FLAG dispensing conflicts (never silently overwrite)  │
+   ▼                                                          │
+ REIMBURSABILITY  (colour band → CHIFA eligibility) ─────────┘
+   │
+   ▼
+ ExtractionRecord  (JSON; money as strings; abstentions listed)
+```
+
+The two stages can be **stubbed** with deterministic fixture readers, so the
+end-to-end pipeline and its JSON contract run on CPU without the ML stack. The
+canonical data types and per-module signatures are in
+[`docs/INTERFACES.md`](docs/INTERFACES.md).
+
+---
+
+## Quickstart
+
+### Now — synthetic, on your laptop (CPU, no GPU)
+
+```bash
+# 1. install the light core + dev tools (no torch / no GPU)
+pip install -e .[dev]
+
+# 2. run the test suite (parsing to the centime, dataset integrity, e2e on goldens)
+pytest
+
+# 3. extract a structured record from an image (uses fixture stubs without [ml])
+vignocr extract path/to/vignette.jpg --flow selling
+```
+
+`vignocr extract` returns an `ExtractionRecord` as JSON: per-field value +
+confidence + status, the checksum verdict, the nomenclature match/conflicts, the
+reimbursability colour, and the list of fields that abstained. Money values are
+serialized as strings (`"702.56"`), never floats.
+
+> The synthetic fixture (`fixtures/synthetic/`) is generated deterministically to
+> match the **exact** target COCO schema (`configs/classes.yaml`), so everything
+> downstream is exercised before a single real label exists.
+
+### Later — training on Narval (HPC, GPU)
+
+```bash
+# one-time environment bootstrap on the cluster (modules, venv, wheelhouse, [ml] extra)
+scripts/setup_narval.sh
+
+# submit the full dependency DAG: validate → train → eval → export(ONNX) → ocr → bench
+slurm/submit_all.sh
+```
+
+Training pulls in the heavy stack via the `[ml]` extra
+(`pip install -e .[ml]` — `torch`, `rfdetr`, `paddleocr`, `onnxruntime`, …),
+which is installed **only** on GPU hosts. The core never imports these at module
+load time.
+
+---
+
+## The data-reconciliation note (read this before training)
+
+The real Roboflow COCO exports in the repo **do not** carry the field schema we
+need. Inspected 2026-05:
+
+| Export  | Roboflow project       | Categories present                 | Target (`classes.yaml`)        |
+| ------- | ---------------------- | ---------------------------------- | ------------------------------ |
+| `data/` | *vignette* v2          | `date_info`, `entete`, `vin`       | 15 classes (12 fields + 3 aux) |
+| `data2/`| *Algeria-Drug-label* v3| `drug-labels`, `text`              | 15 classes (12 fields + 3 aux) |
+
+Neither is a subset of the 15-class target — the per-field money/code/date/identity
+classes the business rules depend on are **not annotated**. Consequently:
+
+- The pipeline is developed and proven on the **synthetic fixture**
+  (`active: synthetic` in `configs/data.yaml`).
+- The real images must be **re-annotated** to the 15-class schema before training
+  is meaningful. See [`docs/DATASET.md`](docs/DATASET.md).
+- When real annotations land, switchover is a **one-line change** and a validation
+  checklist — see [`docs/SWITCHOVER.md`](docs/SWITCHOVER.md).
+
+---
+
+## The hard safety invariant
+
+> **The nomenclature engine MUST NEVER overwrite `ppa` or `tr`, and MUST NEVER
+> silently overwrite a dispensing-critical field (`dci`, `dosage`, `forme`) on a
+> confident OCR↔nomenclature disagreement. A conflict is *flagged* ("à vérifier")
+> and reported — never resolved by guessing.**
+
+This is enforced by `configs/nomenclature/correction.yaml` (`never_overwrite`,
+`flag_on_conflict`) and by the abstention thresholds in
+`configs/parsing/fields.yaml` (selling stricter than receiving). A wrong price or
+a wrong dispense is unacceptable; abstaining is always the safe default.
+
+---
+
+## Repository layout
+
+```
+pharmakon-ocr/
+├── README.md                      ← you are here
+├── pyproject.toml                 core deps + [ml]/[dev] extras, ruff/black/pytest
+├── configs/                       ◀ SINGLE SOURCE OF TRUTH (no hardcoding anywhere)
+│   ├── classes.yaml               the 15 classes + roles (fields, money, checksum, …)
+│   ├── data.yaml                  dataset location + COCO layout + integrity asserts
+│   ├── parsing/fields.yaml        regexes, decimal locale, checksum, PPA, abstention
+│   └── nomenclature/correction.yaml  match + correction policy (the safety core)
+├── docs/
+│   ├── INTERFACES.md              canonical data types + per-module signatures
+│   ├── ROADMAP.md                 phased plan with entry/exit gates
+│   ├── DATASET.md                 organization, COCO standard, reconciliation, versioning, QC
+│   ├── SWITCHOVER.md              the one-line synthetic→real switch + validation checklist
+│   ├── HITL.md                    human-in-the-loop correction capture → retraining loop
+│   ├── MONITORING.md              prod accuracy/confidence, drift, latency, alerting
+│   ├── TESTING.md                 OCR regression goldens, dataset validation, e2e, field matrix
+│   └── FUTURE.md                  ordonnances, handwriting, supplier docs, pharma doc-intelligence
+├── src/vignocr/
+│   ├── common/                    config loader, schemas, logging, seeding, metrics (CPU-only)
+│   ├── data/                      synthetic gen, COCO load, validate, stats
+│   ├── detection/                 RF-DETR train / eval / export(ONNX) / infer  (lazy torch)
+│   ├── ocr/                       recognizer train / eval / infer / preprocess (lazy backend)
+│   ├── parsing/                   money / dates / codes / checksum / PPA / record (pure CPU)
+│   ├── nomenclature/              loader / match / correct                      (pure CPU)
+│   ├── pipeline/                  the orchestrator (detect → read → parse → correct → JSON)
+│   └── serving/                   FastAPI: /health, /ready, /extract
+├── scripts/                       setup_narval.sh, ingest_nomenclature.py, …
+├── slurm/                         sbatch job files + submit_all.sh (the training DAG)
+├── fixtures/                      synthetic COCO dataset + nomenclature.csv (CPU dev/test)
+├── tests/                         pytest: parsing goldens, dataset integrity, e2e, benchmarks
+├── data/    data2/                real Roboflow exports (NOT yet in the 15-class schema)
+└── NOMENCLATURE-VERSION-FEVRIER-2026-.xlsx   real national reference (ingest → CSV)
+```
+
+> Some directories above (`scripts/`, `slurm/`, `fixtures/`, `tests/`, and the
+> non-`common` `src/vignocr/` subpackages) are the **target layout** the configs
+> and [`docs/INTERFACES.md`](docs/INTERFACES.md) are written against, and are
+> being filled in phase by phase per [`docs/ROADMAP.md`](docs/ROADMAP.md). The
+> contract is fixed; the implementation lands against it.
+
+---
+
+## Design principles (non-negotiable)
+
+1. **Config-driven.** The 15-class schema is defined **once** in
+   `configs/classes.yaml`. Class names, paths, regexes, thresholds, and
+   hyperparameters are read from `configs/` via `vignocr.common` — never hardcoded.
+2. **Money is `decimal.Decimal` end-to-end** — never `float`. Serialized to JSON
+   as a centime-quantized **string** via `vignocr.common.money_str`.
+3. **Heavy ML libs are lazy-imported** inside the functions that use them. The
+   core imports and runs on CPU without `torch`/`rfdetr`/`paddleocr`/`onnxruntime`/
+   `cv2`. On `ImportError` the message tells you to `pip install -e .[ml]`.
+4. **Abstain over guess.** Below the confidence threshold a field is `abstain`
+   ("à vérifier"), surfaced to the human, never silently filled.
+
+See [`docs/INTERFACES.md`](docs/INTERFACES.md) for the binding contract every
+module is built against.

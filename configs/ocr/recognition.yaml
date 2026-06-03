@@ -1,0 +1,180 @@
+# =============================================================================
+# configs/ocr/recognition.yaml  —  per-field text recognition (Stage 2).
+# -----------------------------------------------------------------------------
+# Stage 1 (detection, RF-DETR) hands us a crop + its class. This config drives
+# how each crop is preprocessed and recognized, how confidence is computed, and
+# when the recognizer ABSTAINS instead of guessing.
+#
+# Contract notes (do NOT duplicate values that live elsewhere):
+#   * Field names / types / orientation are owned by configs/classes.yaml.
+#     Here we key preprocessing by the field *type* (money|code|date|text),
+#     not by hardcoded field names, so a new field inherits the right pipeline.
+#   * Abstention thresholds are owned by configs/parsing/fields.yaml:abstention.
+#     We only reference them (path below); we never copy the numbers.
+# =============================================================================
+schema_version: 1
+
+# --------------------------------------------------------------------------- #
+# Backend switch.  baseline (ship today) | transformer (research direction).
+# Override at runtime with env VIGNOCR_OCR_BACKEND=transformer (12-factor).
+# --------------------------------------------------------------------------- #
+backend: baseline
+
+backends:
+  # -------------------------------------------------------------------------
+  # BASELINE — PaddleOCR (PP-OCRv4 recognition head).
+  # Why PaddleOCR is the baseline of choice for Algerian vignettes:
+  #   * Fast on CPU: the PP-OCRv4 *recognition* head (SVTR-LCNet) runs in a few
+  #     ms/crop on CPU — and Stage 1 already localized the field, so we only
+  #     recognize tiny crops, never the full page. Suits a prefill-and-confirm UX.
+  #   * Quantizable / deployable: ships INT8 + ONNX-exportable models and a
+  #     PaddleSlim quantization path, so the same model runs on a GPU host or a
+  #     modest CPU box without a separate codebase.
+  #   * fr + digits coverage: vignette text is French (latin) + lots of digits
+  #     and money/date punctuation; the latin dictionary + a custom per-field
+  #     char whitelist (see field_types.*.char_whitelist) constrains decoding to
+  #     exactly the alphabet a field can contain, which both raises accuracy and
+  #     makes the confidence signal meaningful.
+  #   * Per-line confidence: PaddleOCR returns a (text, score) pair per crop,
+  #     which we map straight onto FieldRead.confidence + the abstention gate.
+  baseline:
+    engine: paddleocr
+    # Recognition-only: detection is RF-DETR's job (Stage 1), not PaddleOCR's.
+    use_detection: false
+    use_angle_cls: false          # we do explicit orientation correction (preprocess.orient)
+    lang: fr                       # latin/French dictionary; digits+punct included
+    rec_model_dir: null            # null -> PaddleOCR default PP-OCRv4 rec model; set for a fine-tuned/quantized export
+    rec_image_shape: [3, 48, 320]  # CHW the rec head expects; preprocess resizes to height=48
+    use_gpu: false                 # CPU today; flip on GPU hosts (or env VIGNOCR_OCR_USE_GPU=1)
+    drop_score: 0.0                # we do NOT let the backend silently drop low-score reads;
+                                   # the abstention gate (below) owns that decision.
+    quantize:
+      enabled: false               # PaddleSlim INT8 export hook (deploy-time); off for fixture/CPU dev
+      mode: int8
+
+  # -------------------------------------------------------------------------
+  # TRANSFORMER — scaffolded research direction, OFF by default.
+  # Sequence-to-sequence recognizers that can read a whole field (or strip) at
+  # once. Heavier; revisited if the baseline's CER on hard fields plateaus.
+  # NOTE: transformers (HF) is NOT in pyproject [ml] yet — selecting this backend
+  # raises a clear ImportError telling the user to install it (see infer.py).
+  transformer:
+    engine: trocr                  # trocr | donut
+    variants:
+      trocr:
+        # Line/field recognizer (image -> text). Good for the money/code/date
+        # single-line fields. microsoft/trocr-* are English-pretrained; a French
+        # vignette deployment MUST fine-tune (see train.run / TODO there).
+        model_name: microsoft/trocr-base-printed
+        max_new_tokens: 32
+      donut:
+        # Document-understanding (image -> structured tokens). Candidate for the
+        # whole `entete`/`vin` strip rather than per-field crops. Different I/O
+        # contract (it can emit several fields at once) — wired but unproven.
+        model_name: naver-clova-ix/donut-base
+        task_prompt: "<s_vignette>"
+        max_new_tokens: 64
+
+# --------------------------------------------------------------------------- #
+# Per-field-TYPE recognition + preprocessing.
+# Keyed by classes.yaml `type` (money|code|date|text|region). Region crops are
+# not text — they are not recognized here (the reimbursability head reads
+# color_band; entete/vin are structural). Each block declares the character
+# alphabet the field may contain and the preprocessing pipeline for that type.
+# --------------------------------------------------------------------------- #
+field_types:
+  money:
+    # ppa / prix / shp — digits with French decimal/thousand punctuation + DA.
+    # We let OCR read the raw glyphs; parsing/fields.yaml:money owns Decimal
+    # normalization. The whitelist keeps the decoder from inventing letters.
+    char_whitelist: "0123456789.,DA "
+    description: "digits + , . (and DA/space); Decimal-normalized downstream"
+    preprocess:
+      to_grayscale: true
+      deskew: true                 # money lines are horizontal; correct small skew
+      denoise: true
+      band_aware_contrast: true    # money can sit on/near the coloured band -> normalize contrast without touching hue
+      target_height: 48            # match rec_image_shape height
+      pad_ratio: 0.06              # small border so glyphs aren't clipped after crop
+
+  code:
+    # num_enregistrement (horizontal) / num_lot (vertical, rotated upstream).
+    # Alphanumeric + the / and - separators the code formats use.
+    char_whitelist: "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789/.-"
+    description: "alnum + / - . ; uppercased; confusion_map applied in parsing"
+    preprocess:
+      to_grayscale: true
+      deskew: true
+      denoise: true
+      band_aware_contrast: false
+      sharpen: true                # small printed codes benefit from light sharpening
+      target_height: 48
+      pad_ratio: 0.08
+
+  date:
+    # date_fab / date_exp (vertical on the vin strip -> rotated upright first).
+    char_whitelist: "0123456789/-."
+    description: "digits + / - . ; parsed against fields.yaml date formats"
+    preprocess:
+      to_grayscale: true
+      deskew: true
+      denoise: true
+      band_aware_contrast: false
+      target_height: 48
+      pad_ratio: 0.10              # rotated crops can be tight -> a touch more padding
+
+  text:
+    # product_name / dci / dosage / forme / laboratoire — Latin free text.
+    # Widest alphabet; null whitelist == use the backend's full latin dictionary
+    # (accents, mixed case, spaces) rather than constraining it.
+    char_whitelist: null
+    description: "latin free text (accents, mixed case); nomenclature may repair"
+    preprocess:
+      to_grayscale: true
+      deskew: true
+      denoise: true
+      band_aware_contrast: false
+      target_height: 48
+      pad_ratio: 0.05
+
+# --------------------------------------------------------------------------- #
+# Confidence + abstention.
+# The recognizer emits FieldRead.confidence in [0,1]. Below the flow's
+# threshold => status="abstain" (raw text kept, flagged à vérifier), never a
+# silent guess. Thresholds are NOT defined here — they are read from
+# parsing/fields.yaml:abstention[flow] (selling is stricter than receiving).
+# --------------------------------------------------------------------------- #
+confidence:
+  # Where the abstention thresholds live (single source of truth). infer.py
+  # loads this config + key and resolves abstention[flow].default (+ per-field
+  # overrides if present). Keeping the *reference* here, the *values* there.
+  abstention_thresholds_config: parsing/fields
+  abstention_thresholds_key: abstention
+  default_flow: selling            # safest default; the pipeline overrides per request
+  # How a per-crop score becomes FieldRead.confidence. PaddleOCR already returns
+  # a normalized 0..1 line score, so the baseline passthrough is identity.
+  scoring: backend_score           # backend_score | mean_token_prob
+  empty_read_confidence: 0.0       # an empty/whitespace read is never "confident"
+
+# --------------------------------------------------------------------------- #
+# Training / evaluation (recognition head fine-tuning on field crops).
+# Real fine-tuning runs on GPU hosts with the [ml] extra; entrypoints import on
+# CPU. CER/abstention metrics gate Phase 5 (field CER <= 5% on business-critical).
+# --------------------------------------------------------------------------- #
+train:
+  seed: 1337
+  epochs: 50
+  batch_size: 64
+  learning_rate: 0.0005
+  # Crops are produced by data/coco.crops_for_image keyed by field name; the
+  # trainer groups them by field *type* so each type's whitelist/preprocess apply.
+  image_height: 48
+  max_text_length: 40
+  save_best_metric: cer            # lower is better
+
+eval:
+  # Reported per field *type* + overall, plus abstention precision (of the reads
+  # we did NOT abstain on, how many were exactly correct).
+  metrics: [cer, abstention_precision, abstention_rate]
+  business_critical_only_gate: true   # the Phase-5 gate is CER on business-critical fields
+  cer_gate: 0.05                      # <= 5% CER to pass (docs/ROADMAP.md Phase 5)

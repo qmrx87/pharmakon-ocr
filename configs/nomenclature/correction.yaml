@@ -1,0 +1,44 @@
+# =============================================================================
+# configs/nomenclature/correction.yaml  —  N°Enregistrement correction engine.
+# Repairs IDENTITY fields from the matched record; NEVER touches ppa/tr.
+# Dispensing-critical conflicts are flagged, never silently overwritten.
+# =============================================================================
+schema_version: 1
+
+csv:
+  path: fixtures/nomenclature.csv          # synthetic now; ingest real xlsx via scripts/ingest_nomenclature.py
+  key_column: num_enregistrement
+  columns: [num_enregistrement, product_name, dci, dosage, forme, laboratoire, tr]
+  encoding: utf-8
+
+# Normalize the read code to the canonical form before matching.
+normalize:
+  uppercase: true
+  strip_internal_spaces: true              # "14G 061" / "14 G061" -> "14G061"
+  glue_letter_block: true                  # keep the AA/BB/CC<LETTER>DDD/EEE structure
+  apply_confusion_map: true                # use fields.yaml num_enregistrement.confusion_map on digit slots
+
+match:
+  strategy: structural_edit_distance       # edit distance with structural priors on the code format
+  fuzzy_lib: rapidfuzz
+  max_edit_distance: 2                      # up to 2 char repairs on the ~12-char code
+  min_match_confidence: 0.75                # below -> no match -> keep OCR values, flag anchor
+  # Per-block edit costs: the letter block is most identity-bearing, so changing it costs more.
+  block_weights: { a: 1.0, b: 1.0, c: 1.0, letter: 2.0, d: 1.0, e: 0.5 }
+
+# -------------------------------------------------------------------------
+# Correction policy — the medical safety core (see docs/NOMENCLATURE_CORRECTION.md).
+#   never_overwrite           : nomenclature MUST NOT change these (vignette-specific).
+#   repair_always             : nomenclature is source of truth (identity/manufacturer).
+#   repair_if_ocr_low_or_agree: use nomenclature only if OCR abstained or already agrees.
+#   flag_on_conflict          : dispensing-critical — on a confident OCR<->nomenclature
+#                               disagreement, DO NOT overwrite; mark à vérifier + report.
+# -------------------------------------------------------------------------
+policy:
+  never_overwrite:            [ppa, tr]
+  repair_always:              [product_name, laboratoire]
+  repair_if_ocr_low_or_agree: [dci]
+  flag_on_conflict:           [dosage, forme]
+  ocr_low_conf_threshold:     0.75
+  emit_conflict_report:       true
+  # When OCR and nomenclature agree, mark the field source="ocr+nomenclature" (highest trust).

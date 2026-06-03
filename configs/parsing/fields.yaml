@@ -1,0 +1,89 @@
+# =============================================================================
+# configs/parsing/fields.yaml  —  deterministic normalization + validation.
+# Money is Decimal end-to-end (never float). Codes/dates via validated parsers.
+# =============================================================================
+schema_version: 1
+
+locale:
+  decimal_separators: [",", "."]     # vignettes mix "700.06" and "702,56"
+  canonical_decimal: "."             # normalize to this internally
+  thousands_separators: [" ", " ", "'"]
+  currency_tokens: ["DA", "Da", "da", "DZD"]
+  money_quantum: "0.01"              # round/validate to the centime
+
+money:
+  # Parse "1 234,56 DA" / "1234.56" -> Decimal("1234.56"). Capture the numeric run only.
+  regex: '(?P<num>\d{1,3}(?:[  '']?\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?)'
+  min_value: "0.00"
+  max_value: "100000.00"             # sanity bound; above -> abstain
+
+# prix + shp = ppa, to the centime. One of the strongest accuracy levers.
+checksum:
+  enabled: true
+  rule: "prix + shp == ppa"
+  tolerance: "0.00"                  # exact to the centime
+  repair: true                       # if 2 of 3 are confident, recompute the third
+  min_conf_to_anchor: 0.80           # a value must be >= this to repair another
+  on_mismatch: flag                  # never silently accept a failed checksum
+  verdicts: [ok, repaired, mismatch, incomplete]
+
+# PPA may appear twice: intermediate "PPA: 700,06+2,50" and final "PPA = 702,56 DA".
+# Select the FINAL deterministically.
+ppa_disambiguation:
+  prefer: final
+  final_pattern: '=\s*(?P<num>\d[\d  .,'']*)\s*(?:DA|DZD)?'   # the "= XXX,XX DA" value
+  intermediate_pattern: '(?P<a>\d[\d  .,'']*)\s*\+\s*(?P<b>\d[\d  .,'']*)'
+  fallback: sum_prix_shp             # if no final line, use prix+shp
+
+# Per-field parsers + validators.
+fields:
+  num_enregistrement:
+    # Samples: 16/99/17D034/022 ; 18/97/14G 061/003 ; 09/22 F 018/235
+    # Structure: AA / BB / CC <LETTER> DDD / EEE  (spaces around the letter vary)
+    regex: '^\s*(?P<a>\d{2})\s*/\s*(?P<b>\d{2})\s*/\s*(?P<c>\d{2})\s*(?P<letter>[A-Z])\s*(?P<d>\d{3})\s*/\s*(?P<e>\d{3})\s*$'
+    letters: [D, F, G, E, H, P, R, S, A, B, C, T]   # known letter blocks; extend as data shows
+    normalized_format: "{a}/{b}/{c}{letter}{d}/{e}"
+    confusion_map: { O: "0", I: "1", l: "1", S: "5", B: "8", Z: "2" }  # OCR digit/letter confusions
+
+  num_lot:
+    regex: '^[A-Z0-9][A-Z0-9\-/.]{1,18}$'
+    uppercase: true
+
+  date_fab:
+    parser: date
+    formats: ["%m/%Y", "%m-%Y", "%m.%Y", "%d/%m/%Y", "%Y-%m", "%Y/%m"]
+    output: "%Y-%m"
+  date_exp:
+    parser: date
+    formats: ["%m/%Y", "%m-%Y", "%m.%Y", "%d/%m/%Y", "%Y-%m", "%Y/%m"]
+    output: "%Y-%m"
+    must_be_after: date_fab          # sanity: EXP > FAB
+
+  ppa:  { parser: money }
+  prix: { parser: money }
+  shp:  { parser: money }
+  tr:   { parser: money }
+
+  # Real-data class: ONE detection box covers both prix and shp (e.g.
+  # "248.50 + 1.50" or "Prix 248,50 SHP 1,50"). After OCR, parsing.ppa_shp.split
+  # extracts the two amounts and injects prix + shp FieldReads so the
+  # prix + shp == ppa checksum still runs unchanged.
+  ppa_shp:
+    parser: money_combo
+    split_regex: '(?P<a>\d[\d  .,'']*)\s*(?:\+|SHP|shp|;|/|\|)\s*(?P<b>\d[\d  .,'']*)'
+    # First match = prix, second = shp (small-vs-large ordering is enforced in code
+    # only as a fallback when separators are missing).
+    prefer_separator: true
+
+  product_name: { parser: text, max_len: 80 }
+  dci:          { parser: text, max_len: 80 }
+  dosage:       { parser: text, max_len: 40 }
+  forme:        { parser: text, max_len: 40 }
+  laboratoire:  { parser: text, max_len: 60 }
+
+# Abstention thresholds — selling path is STRICTER than receiving (see docs/INTEGRATION.md).
+# Below threshold -> field status = "abstain" (à vérifier), never silently guessed.
+abstention:
+  selling:   { default: 0.90 }       # 🛑 stricter (a wrong dispense is unacceptable)
+  receiving: { default: 0.75 }
+  # Per-field overrides may be added here, e.g. selling: { num_lot: 0.92 }

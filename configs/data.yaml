@@ -40,6 +40,25 @@ datasets:
     #   2. add `tr` (tarif_ref, 252 train anns) as a detection class?
     #   3. fallback for missing color_band (no reimbursability annotation) — return "unknown"?
 
+  # ---- Stage A: vignette-region detector (find the vignette inside a wider drug-box photo) ----
+  # The Algeria-Drug-label vignette dataset (Roboflow, exported 2026-06-03): 750
+  # images annotated with `entete` (whole vignette body, 551 train anns) + `vin`
+  # (rotated left strip, 552) + `date_info`. Stage A trains a small RF-DETR on
+  # these three classes; the pipeline uses ONLY the `entete` box at inference to
+  # crop the vignette out and feed it to Stage B.
+  vignette:
+    root: data2                                # pharmakon-ocr/data2/
+    coco_filename: _annotations.coco.json
+    splits: { train: train, val: valid, test: test }
+    image_size: [416, 416]
+    generate: false
+    # Stage A only needs `entete` for production, but training on all three uses
+    # every annotation we have and gives the model more useful context.
+    class_names: [date_info, entete, vin]      # source-of-truth for the Stage A head; not from classes.yaml
+    bbox_clamp_tolerance: 2.0
+    business_critical_present_severity: skip   # Stage A has no business_critical concept
+    # No aliases needed — the names are clean already.
+
 nomenclature:
   source_xlsx: NOMENCLATURE-VERSION-FEVRIER-2026-.xlsx   # real reference (1.4 MB, Feb 2026)
   csv: fixtures/nomenclature.csv                          # synthetic fixture now; ingest real via scripts/ingest_nomenclature.py

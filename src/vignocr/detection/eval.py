@@ -21,39 +21,44 @@ from pathlib import Path
 from typing import Any
 
 from vignocr.common import (
-    get_active_dataset,
     get_classes,
     get_logger,
     load_config,
 )
 from vignocr.common.metrics import iou_xywh, localization_recall
+from vignocr.detection._resolve import resolve_class_schema, resolve_dataset
 
 log = get_logger(__name__)
 
 _ML_HINT = "Detection eval needs the ML extra (pycocotools/torch). Run: pip install -e .[ml]"
 
 
-def _split_dir(root: Path, split: str) -> Path:
+def _split_dir(root: Path, split: str, cfg: dict[str, Any] | None = None) -> Path:
     """Resolve the split directory, honouring data.yaml's split-name mapping.
 
     ``split`` may be a logical key (``train``/``val``/``test``) or a literal dir
     name (``valid``). We consult ``data.yaml: splits`` to translate keys, then
     fall back to the name as-is.
     """
-    ds = get_active_dataset()
+    # Use the eval config's bound dataset (not the global active) so Stage A
+    # eval resolves data2's splits, Stage B resolves data/'s splits.
+    if cfg is None:
+        cfg = load_config("detection/rfdetr_medium")
+    ds = resolve_dataset(cfg)
     splits = ds.get("splits", {})
     name = splits.get(split, split)
     candidate = root / name
     if candidate.exists():
         return candidate
-    # Final fallback: the raw split string under root.
     if (root / split).exists():
         return root / split
     raise FileNotFoundError(f"split dir not found under {root}: tried {name!r} and {split!r}")
 
 
-def _coco_filename() -> str:
-    return get_active_dataset().get("coco_filename", "_annotations.coco.json")
+def _coco_filename(cfg: dict[str, Any] | None = None) -> str:
+    if cfg is None:
+        cfg = load_config("detection/rfdetr_medium")
+    return resolve_dataset(cfg).get("coco_filename", "_annotations.coco.json")
 
 
 def _load_coco(ann_path: Path) -> dict[str, Any]:
@@ -61,7 +66,12 @@ def _load_coco(ann_path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
-def run(ckpt: Path | str, root: Path | str, split: str = "valid") -> dict[str, Any]:
+def run(
+    ckpt: Path | str,
+    root: Path | str,
+    split: str = "valid",
+    cfg_path: str = "detection/rfdetr_medium",
+) -> dict[str, Any]:
     """Evaluate ``ckpt`` on ``root/<split>`` and return a metrics dict.
 
     Args:

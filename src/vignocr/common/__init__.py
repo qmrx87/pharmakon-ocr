@@ -10,6 +10,7 @@ from vignocr.common.config import (
     ClassSchema,
     get_active_dataset,
     get_classes,
+    get_dataset,
     load_config,
     repo_root,
 )
@@ -30,6 +31,7 @@ __all__ = [
     "load_config",
     "get_classes",
     "get_active_dataset",
+    "get_dataset",
     "repo_root",
     "configure_logging",
     "get_logger",

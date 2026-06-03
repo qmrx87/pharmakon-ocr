@@ -20,7 +20,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from vignocr.common import BBox, get_classes, get_logger, load_config
+from vignocr.common import BBox, get_logger, load_config
+from vignocr.detection._resolve import resolve_class_schema, resolve_dataset
 
 if TYPE_CHECKING:  # type-only imports; never executed at runtime (no ml dep on import)
     from PIL.Image import Image
@@ -28,6 +29,24 @@ if TYPE_CHECKING:  # type-only imports; never executed at runtime (no ml dep on 
 log = get_logger(__name__)
 
 _ML_HINT = "Detection inference needs the ML extra. Run: pip install -e .[ml]"
+
+
+class _DetectorSchemaView:
+    """Schema-shaped view (``num_classes`` + ``name_of``) over a flat class list.
+
+    Each detection stage binds to its own class list (Stage A: 3 vignette classes;
+    Stage B: 17 field classes from ``classes.yaml``). This tiny view lets the
+    Detector treat both uniformly without depending on the field-schema dataclass.
+    """
+
+    def __init__(self, names: list[str], n: int) -> None:
+        self._names: list[str] = list(names)
+        self.num_classes: int = int(n)
+
+    def name_of(self, idx: int) -> str:
+        if 0 <= idx < len(self._names):
+            return self._names[idx]
+        return f"class_{idx}"
 
 
 @dataclass(frozen=True)
@@ -77,7 +96,11 @@ class Detector:
         if not self.path.exists():
             raise FileNotFoundError(f"detector weights not found: {self.path}")
         self._cfg = load_config(cfg_path)
-        self._schema = get_classes()
+        # Per-config dataset + class binding (Stage A uses 3 classes from
+        # data.yaml/vignette; Stage B uses 17 from classes.yaml).
+        _ds = resolve_dataset(self._cfg)
+        _n, _names = resolve_class_schema(self._cfg, _ds)
+        self._schema = _DetectorSchemaView(_names, _n)
         self.resolution: int = int(self._cfg.get("model", {}).get("resolution", 640))
         eval_cfg = self._cfg.get("eval", {})
         self.score_threshold: float = (

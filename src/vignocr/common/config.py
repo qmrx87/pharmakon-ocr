@@ -132,16 +132,33 @@ def get_classes() -> ClassSchema:
 # --------------------------------------------------------------------------- #
 
 
-def get_active_dataset() -> dict[str, Any]:
-    """Resolve ``data.yaml``'s active dataset with an absolute ``root`` path.
+def get_dataset(name: str) -> dict[str, Any]:
+    """Resolve a specific ``data.yaml`` dataset block with absolute ``root`` path.
 
-    Override the active dataset at runtime with env ``VIGNOCR_DATA_ACTIVE``.
+    Used by per-config detectors that bind to a SPECIFIC dataset (Stage A binds
+    to ``vignette``, Stage B binds to ``real``), independently of the global
+    ``active`` selector. Raises ``KeyError`` if ``name`` is not declared.
     """
     cfg = load_config("data")
-    active = os.environ.get("VIGNOCR_DATA_ACTIVE", cfg.get("active", "synthetic"))
-    ds = dict(cfg["datasets"][active])
-    ds["name"] = active
+    if name not in cfg.get("datasets", {}):
+        raise KeyError(
+            f"dataset {name!r} not declared in data.yaml; "
+            f"available: {sorted((cfg.get('datasets') or {}).keys())}"
+        )
+    ds = dict(cfg["datasets"][name])
+    ds["name"] = name
     ds["root"] = str(resolve_path(ds["root"]))
     ds["_nomenclature"] = cfg.get("nomenclature", {})
     ds["_integrity"] = cfg.get("integrity", {})
     return ds
+
+
+def get_active_dataset() -> dict[str, Any]:
+    """Resolve ``data.yaml``'s active dataset (synthetic-or-real default selector).
+
+    Override at runtime with env ``VIGNOCR_DATA_ACTIVE``. For Stage-specific
+    detectors prefer :func:`get_dataset` so each stage binds to its own data.
+    """
+    cfg = load_config("data")
+    active = os.environ.get("VIGNOCR_DATA_ACTIVE", cfg.get("active", "synthetic"))
+    return get_dataset(active)

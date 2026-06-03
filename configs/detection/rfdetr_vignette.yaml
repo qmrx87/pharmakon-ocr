@@ -1,0 +1,88 @@
+# =============================================================================
+# configs/detection/rfdetr_vignette.yaml  —  STAGE A: vignette-region detector.
+#
+# Finds the vignette REGION inside a wider drug-box photo so Stage B (the field
+# detector) sees a clean vignette crop. Trained on data2/ (Algeria-Drug-label
+# vignette dataset, 750 images / 416×416 / classes = entete + vin + date_info).
+#
+# Schema for Stage A lives in `data.yaml: datasets.vignette.class_names` — it is
+# INDEPENDENT of classes.yaml (which is the Stage B field schema). At inference
+# the pipeline uses ONLY the `entete` detection to crop the vignette.
+#
+# A smaller, single-A100 budget than Stage B: 3 classes, larger boxes, easier
+# task. Drops batch + epochs accordingly.
+# =============================================================================
+schema_version: 1
+
+# Bind THIS config to a specific data.yaml dataset (independent of VIGNOCR_DATA_ACTIVE).
+dataset: vignette
+
+model:
+  name: rfdetr_medium
+  # Stage A is a 3-class problem; resolve the head width + class names from
+  # data.yaml's vignette block (not from classes.yaml — that's Stage B).
+  num_classes: 3
+  class_names: [date_info, entete, vin]
+  resolution: 416                # matches data2's image size
+  pretrained: true
+
+train:
+  epochs: 30                     # smaller than Stage B — easier task, fewer classes
+  batch_size: 8
+  grad_accum_steps: 2
+  lr: 1.0e-4
+  lr_backbone: 1.0e-5
+  weight_decay: 1.0e-4
+  optimizer: adamw
+  lr_scheduler: cosine
+  warmup_epochs: 1
+  clip_max_norm: 0.1
+  num_workers: 2
+  seed: 1337
+  early_stop: { enabled: true, monitor: map, mode: max, patience: 8, min_delta: 0.001 }
+  checkpoint:
+    dir: scratch/detection/rfdetr_vignette
+    save_best: true
+    save_last: true
+    metric: map
+
+# Same band-color-preserving augmentation policy as Stage B (the band colour
+# carries CHIFA reimbursability — never enable hue/channel ops). Identical
+# `forbidden` block; asserted off by detection/train.run().
+augmentation:
+  enabled: true
+  geometric:
+    horizontal_flip: 0.5
+    vertical_flip: 0.0
+    rotate_deg: 7
+    scale: [0.85, 1.15]
+    translate_frac: 0.06
+    shear_deg: 4
+    random_resized_crop: 0.3
+  photometric:
+    brightness: 0.20
+    contrast: 0.20
+    gamma: [0.85, 1.15]
+    gaussian_blur_p: 0.15
+    motion_blur_p: 0.10
+    glare_p: 0.10
+    gauss_noise_p: 0.15
+    jpeg_compression_p: 0.15
+    saturation: 0.0
+  forbidden:
+    hue_shift: false
+    channel_shuffle: false
+    rgb_shift: false
+    to_grayscale: false
+    color_jitter_strong: false
+
+eval:
+  score_threshold: 0.30
+  iou_threshold: 0.50
+  max_detections: 5              # at most a few vignettes per drug-box photo
+
+export:
+  opset: 17
+  parity_atol: 1.0e-3
+  parity_rtol: 1.0e-3
+  dynamic_batch: false

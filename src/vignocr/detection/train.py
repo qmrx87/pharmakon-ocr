@@ -20,13 +20,12 @@ from pathlib import Path
 from typing import Any
 
 from vignocr.common import (
-    get_active_dataset,
-    get_classes,
     get_logger,
     load_config,
     repo_root,
     seed_everything,
 )
+from vignocr.detection._resolve import resolve_class_schema, resolve_dataset
 
 log = get_logger(__name__)
 
@@ -126,15 +125,15 @@ def _snapshot_run(cfg_path: str, cfg: dict[str, Any], run_dir: Path, ckpt_dir: P
     )
     if src.exists():
         shutil.copy2(src, run_dir / "config_snapshot.yaml")
-    schema = get_classes()
-    ds = get_active_dataset()
+    ds = resolve_dataset(cfg)
+    num_classes, class_names = resolve_class_schema(cfg, ds)
     meta = {
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "git_sha": _git_sha(),
         "cfg_path": cfg_path,
         "resolved_config": cfg,
-        "num_classes": schema.num_classes,
-        "class_names": schema.names,
+        "num_classes": num_classes,
+        "class_names": class_names,
         "dataset": {"name": ds["name"], "root": ds["root"], "splits": ds.get("splits", {})},
         "checkpoint_dir": str(ckpt_dir),
         "scratch": os.environ.get("VIGNOCR_SCRATCH"),
@@ -186,8 +185,8 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     ckpt_dir = _resolve_checkpoint_dir(cfg, run_dir)
     _snapshot_run(cfg_path, cfg, run_dir, ckpt_dir)
 
-    schema = get_classes()
-    ds = get_active_dataset()
+    ds = resolve_dataset(cfg)
+    num_classes, class_names = resolve_class_schema(cfg, ds)
     dataset_dir = _coco_dataset_dir(ds)
     tcfg = cfg.get("train", {})
     mcfg = cfg.get("model", {})
@@ -202,8 +201,8 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
 
     tb_writer = _maybe_tensorboard(run_dir)
 
-    # 3) Build the model. num_classes ALWAYS from classes.yaml (never the config).
-    num_classes = schema.num_classes
+    # 3) Build the model. num_classes from cfg.model -> dataset.class_names ->
+    #    classes.yaml (resolved above) so the head width is always config-bound.
     resolution = int(mcfg.get("resolution", 640))
     log.info(
         "train.start",

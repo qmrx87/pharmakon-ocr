@@ -39,12 +39,19 @@ _ML_HINT = "Detection training needs the ML extra. Run: pip install -e .[ml]"
 _OFFLINE_HINT = (
     "RF-DETR has no cached COCO-pretrained weights and no resume checkpoint. "
     "On offline compute nodes (Narval) a fresh init would hang trying to "
-    "download from the Hub. Pre-fetch the weights ONCE on the login node:\n"
-    "    bash scripts/fetch_pretrained.sh\n"
-    "This caches them under $VIGNOCR_PRETRAINED_DIR; the trainer then picks "
-    "them up automatically on every subsequent compute-node submission.\n"
-    "If you intentionally want online init (login-node smoke test), unset "
-    "the offline hint by exporting VIGNOCR_ALLOW_ONLINE_PRETRAIN=1."
+    "download from the Hub. Three ways out:\n"
+    "  1. (RECOMMENDED) Cache the weights on the login node:\n"
+    "         bash scripts/fetch_pretrained.sh\n"
+    "     The trainer then picks them up automatically on every subsequent\n"
+    "     compute-node submission.\n"
+    "  2. (DEGRADED, but RUNS TODAY) Train from random init by exporting:\n"
+    "         export VIGNOCR_ACCEPT_FROM_SCRATCH=1\n"
+    "     Stage A/B will converge poorly without the DINOv2 backbone, but\n"
+    "     the pipeline runs end-to-end so the rest of the DAG (eval, export,\n"
+    "     OCR autolabel) can be exercised.\n"
+    "  3. (LOGIN-NODE SMOKE TEST) Allow online init this one time:\n"
+    "         export VIGNOCR_ALLOW_ONLINE_PRETRAIN=1\n"
+    "     Useful only if you're on a node WITH internet."
 )
 
 # Augmentations that could flip green<->red band semantics. They live in the
@@ -260,9 +267,10 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     resolution = int(mcfg.get("resolution", 640))
 
     # OFFLINE INIT GATE: on a compute node, rfdetr's hub download has no network
-    # to reach. Prefer (in order): resume ckpt > cached pretrained > online init.
-    # The online path is opt-in (VIGNOCR_ALLOW_ONLINE_PRETRAIN=1) so we never
-    # silently waste a GPU allocation on a doomed hub call.
+    # to reach. Prefer (in order): resume ckpt > cached pretrained > online init
+    # > random init (opt-in). The online and from-scratch paths are opt-in so we
+    # never silently waste a GPU allocation on a doomed hub call OR train a
+    # randomly-initialised model that won't converge meaningfully.
     init_source: str
     if resume:
         pretrain_weights = str(resume)
@@ -276,6 +284,19 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
             pretrain_weights = None
             init_source = "online"
             log.warning("train.online_pretrain", note="hub download enabled — only safe on login node")
+        elif os.environ.get("VIGNOCR_ACCEPT_FROM_SCRATCH"):
+            # Explicit opt-in to train without COCO-pretrained backbone. Yields
+            # a degraded model but unblocks the pipeline end-to-end so the rest
+            # of the stages can be exercised. Logged as a WARNING so it shows
+            # up in any post-mortem.
+            pretrain_weights = None
+            init_source = "from_scratch_opt_in"
+            log.warning(
+                "train.from_scratch",
+                note="VIGNOCR_ACCEPT_FROM_SCRATCH=1 set; training from random init. "
+                     "Expect degraded mAP. Cache pretrained weights with "
+                     "scripts/fetch_pretrained.sh for production runs.",
+            )
         else:
             raise FileNotFoundError(_OFFLINE_HINT)
 

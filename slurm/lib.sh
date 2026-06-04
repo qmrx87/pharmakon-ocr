@@ -94,15 +94,41 @@ vignocr_derive_account_from_slurm() {
   # Strip Slurm partition suffix (`_g`, `_c`, ...). e.g. def-khenni_g -> def-khenni.
   local clean="${acct%_*}"
   [[ "$clean" == "$acct" ]] && clean="$acct"   # no suffix? keep as-is
-  # PI = the part after `def-`. If it doesn't start with def-, use whole name.
-  local pi="${clean#def-}"
+  # PI = the part after `def-` (also handle rrg-/ctb- allocation prefixes).
+  local pi="${clean#def-}"; pi="${pi#rrg-}"; pi="${pi#ctb-}"
   echo "$clean $pi"
 }
 
+# vignocr_derive_account_from_system: discover the user's Compute Canada
+# allocation on the LOGIN node, without any env vars set. Tries (in order):
+#   1. sacctmgr show user $USER --format=DefaultAccount    (canonical)
+#   2. `id -Gn` filtered for def-/rrg-/ctb- group memberships (fallback)
+# Echoes a single account name on stdout or nothing.
+vignocr_derive_account_from_system() {
+  local acct=""
+  if command -v sacctmgr >/dev/null 2>&1; then
+    acct="$(sacctmgr show user "$USER" --format=DefaultAccount -P -n 2>/dev/null \
+             | head -n1 | tr -d '[:space:]')"
+  fi
+  if [[ -z "$acct" ]] && command -v id >/dev/null 2>&1; then
+    # First def-/rrg-/ctb- group, bare (no `_cpu`/`_gpu`/etc. suffix).
+    acct="$(id -Gn 2>/dev/null | tr ' ' '\n' \
+             | grep -E '^(def|rrg|ctb)-[A-Za-z0-9._-]+$' \
+             | grep -v '_' \
+             | head -n1)"
+  fi
+  echo "$acct"
+}
+
 vignocr_require_env() {
-  # Inside a Slurm job: auto-derive from SLURM_JOB_ACCOUNT if the user's vars
-  # didn't propagate. This makes the job self-sufficient regardless of how it
-  # was submitted (sbatch directly, submit_all.sh, salloc, etc.).
+  # SOURCE OF TRUTH (in order):
+  #   1. explicit user env (VIGNOCR_ACCOUNT / VIGNOCR_PI already set)
+  #   2. inside-job: $SLURM_JOB_ACCOUNT (Slurm sets it; survives any policy
+  #      that strips user-named env)
+  #   3. login-node: sacctmgr DefaultAccount, then `id -Gn` def-/rrg-/ctb-
+  # The script only needs ANY of these to work; nothing has to be exported.
+
+  # (2) inside a Slurm job
   if [[ -z "${VIGNOCR_ACCOUNT:-}" || -z "${VIGNOCR_PI:-}" ]] && [[ -n "${SLURM_JOB_ACCOUNT:-}" ]]; then
     local derived; derived="$(vignocr_derive_account_from_slurm)"
     if [[ -n "$derived" ]]; then
@@ -114,8 +140,31 @@ vignocr_require_env() {
       vlog "derived env from SLURM_JOB_ACCOUNT=$SLURM_JOB_ACCOUNT: VIGNOCR_ACCOUNT=$VIGNOCR_ACCOUNT VIGNOCR_PI=$VIGNOCR_PI"
     fi
   fi
-  : "${VIGNOCR_ACCOUNT:?set VIGNOCR_ACCOUNT=def-<PI> (your Slurm allocation) before submitting — or run inside a Slurm job so SLURM_JOB_ACCOUNT can be used}"
-  : "${VIGNOCR_PI:?set VIGNOCR_PI=<PI> (PI shortname, used for ~/projects/def-<PI>) before submitting — or run inside a Slurm job}"
+
+  # (3) login node — no SLURM_JOB_ACCOUNT, ask the system who we are.
+  if [[ -z "${VIGNOCR_ACCOUNT:-}" ]]; then
+    local sys_acct; sys_acct="$(vignocr_derive_account_from_system)"
+    if [[ -n "$sys_acct" ]]; then
+      export VIGNOCR_ACCOUNT="$sys_acct"
+      vlog "derived VIGNOCR_ACCOUNT=$VIGNOCR_ACCOUNT from system (sacctmgr / id -Gn)"
+    fi
+  fi
+  # Derive PI from whichever account we ended up with.
+  if [[ -n "${VIGNOCR_ACCOUNT:-}" && -z "${VIGNOCR_PI:-}" ]]; then
+    local pi="${VIGNOCR_ACCOUNT%_*}"
+    pi="${pi#def-}"; pi="${pi#rrg-}"; pi="${pi#ctb-}"
+    export VIGNOCR_PI="$pi"
+    vlog "derived VIGNOCR_PI=$VIGNOCR_PI from VIGNOCR_ACCOUNT=$VIGNOCR_ACCOUNT"
+  fi
+
+  # If after all of that they're still empty, surface a CLEAR actionable error.
+  if [[ -z "${VIGNOCR_ACCOUNT:-}" || -z "${VIGNOCR_PI:-}" ]]; then
+    vdie "could not resolve VIGNOCR_ACCOUNT/VIGNOCR_PI automatically. Diagnostics:
+    SLURM_JOB_ACCOUNT       = '${SLURM_JOB_ACCOUNT:-<unset>}'
+    sacctmgr DefaultAccount = '$(command -v sacctmgr >/dev/null 2>&1 && sacctmgr show user $USER --format=DefaultAccount -P -n 2>/dev/null | head -n1)'
+    id -Gn (filtered)       = '$(id -Gn 2>/dev/null | tr ' ' '\n' | grep -E '^(def|rrg|ctb)-' | tr '\n' ' ')'
+Manual override:  export VIGNOCR_ACCOUNT=def-<PI>  VIGNOCR_PI=<PI>"
+  fi
   if [[ "$VIGNOCR_ACCOUNT" == "def-<PI>" || "$VIGNOCR_PI" == "<PI>" ]]; then
     vdie "VIGNOCR_ACCOUNT / VIGNOCR_PI still hold the placeholder. Set them to your real allocation, e.g. export VIGNOCR_ACCOUNT=def-smith VIGNOCR_PI=smith"
   fi

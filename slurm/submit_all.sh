@@ -177,13 +177,27 @@ submit_stage() {
   local dep_args=()
   [[ -n "$dep" ]] && dep_args=(--dependency="afterok:$dep")
   local out jobid
-  # --account on the CLI overrides the placeholder in the file. --export=ALL
-  # forwards our VIGNOCR_* env (account/PI/module/path overrides) into the job.
-  # --chdir anchors %x/%j --output paths to the repo root.
+  # --account on the CLI overrides the placeholder in the file. --chdir anchors
+  # %x/%j --output paths to the repo root.
+  #
+  # --export: we EXPLICITLY name the VIGNOCR_* env our jobs need, in addition
+  # to ALL. Some Compute Canada policies strip non-standard vars from `ALL` on
+  # propagation; naming them defensively guarantees they're carried even if
+  # site policy changes (we hit exactly that: VIGNOCR_ACCOUNT didn't reach the
+  # job, vignocr_require_env aborted, and the job died at startup).
+  # lib.sh ALSO derives account/PI from $SLURM_JOB_ACCOUNT as a final fallback.
+  local export_list="ALL"
+  for v in VIGNOCR_ACCOUNT VIGNOCR_PI VIGNOCR_REPO_ROOT VIGNOCR_PROJECT_DIR \
+           VIGNOCR_SCRATCH_DIR VIGNOCR_LOGS_DIR VIGNOCR_PRETRAINED_DIR \
+           VIGNOCR_VENV_DIR VIGNOCR_RUNS_DIR VIGNOCR_SCRATCH VIGNOCR_DATA_ROOT \
+           VIGNOCR_DATA_ACTIVE VIGNOCR_DETECTION_CONFIG VIGNOCR_RESUME_RUN_DIR \
+           VIGNOCR_ALLOW_ONLINE_PRETRAIN VIGNOCR_OCR_DATASET_DIR; do
+    [[ -n "${!v:-}" ]] && export_list="$export_list,$v=${!v}"
+  done
   out="$(sbatch --parsable \
         --account="$VIGNOCR_ACCOUNT" \
         --chdir="$VIGNOCR_REPO_ROOT" \
-        --export=ALL \
+        --export="$export_list" \
         "${dep_args[@]}" \
         "$script")"
   # --parsable prints just "<jobid>" (or "<jobid>;<cluster>"); be defensive.

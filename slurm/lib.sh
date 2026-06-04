@@ -74,12 +74,48 @@ _vignocr_err_trap() {
 trap '_vignocr_err_trap' ERR
 
 # --------------------------------------------------------------------------- #
-# 1. Contract: required env vars. Account + PI are mandatory; everything else
-#    has a sane default that can be overridden from the environment.
+# 1. Contract: required env vars. Account + PI are mandatory on the SUBMISSION
+#    node (login). Inside a running Slurm job we don't depend on --export=ALL
+#    carrying them — we DERIVE both from $SLURM_JOB_ACCOUNT (which Slurm always
+#    populates inside every job, regardless of the user's shell env). This is
+#    important because some Compute Canada policies strip user-facing env vars
+#    that match certain patterns, so the job can't trust the submitter's env.
+#
+# Account format on Compute Canada is `def-<PI>` with an optional partition
+# suffix Slurm adds at runtime (e.g. `def-khenni_g` on a GPU partition). We
+# strip both the `def-` prefix and any trailing `_X` suffix to recover the PI
+# shortname.
 # --------------------------------------------------------------------------- #
+vignocr_derive_account_from_slurm() {
+  # Echoes (account, pi) on stdout (space-separated) if SLURM_JOB_ACCOUNT is
+  # set; empty otherwise. Caller decides whether to consume the values.
+  local acct="${SLURM_JOB_ACCOUNT:-}"
+  [[ -z "$acct" ]] && return 0
+  # Strip Slurm partition suffix (`_g`, `_c`, ...). e.g. def-khenni_g -> def-khenni.
+  local clean="${acct%_*}"
+  [[ "$clean" == "$acct" ]] && clean="$acct"   # no suffix? keep as-is
+  # PI = the part after `def-`. If it doesn't start with def-, use whole name.
+  local pi="${clean#def-}"
+  echo "$clean $pi"
+}
+
 vignocr_require_env() {
-  : "${VIGNOCR_ACCOUNT:?set VIGNOCR_ACCOUNT=def-<PI> (your Slurm allocation) before submitting}"
-  : "${VIGNOCR_PI:?set VIGNOCR_PI=<PI> (PI shortname, used for ~/projects/def-<PI>) before submitting}"
+  # Inside a Slurm job: auto-derive from SLURM_JOB_ACCOUNT if the user's vars
+  # didn't propagate. This makes the job self-sufficient regardless of how it
+  # was submitted (sbatch directly, submit_all.sh, salloc, etc.).
+  if [[ -z "${VIGNOCR_ACCOUNT:-}" || -z "${VIGNOCR_PI:-}" ]] && [[ -n "${SLURM_JOB_ACCOUNT:-}" ]]; then
+    local derived; derived="$(vignocr_derive_account_from_slurm)"
+    if [[ -n "$derived" ]]; then
+      local d_acct d_pi
+      d_acct="${derived% *}"; d_pi="${derived#* }"
+      : "${VIGNOCR_ACCOUNT:=$d_acct}"
+      : "${VIGNOCR_PI:=$d_pi}"
+      export VIGNOCR_ACCOUNT VIGNOCR_PI
+      vlog "derived env from SLURM_JOB_ACCOUNT=$SLURM_JOB_ACCOUNT: VIGNOCR_ACCOUNT=$VIGNOCR_ACCOUNT VIGNOCR_PI=$VIGNOCR_PI"
+    fi
+  fi
+  : "${VIGNOCR_ACCOUNT:?set VIGNOCR_ACCOUNT=def-<PI> (your Slurm allocation) before submitting — or run inside a Slurm job so SLURM_JOB_ACCOUNT can be used}"
+  : "${VIGNOCR_PI:?set VIGNOCR_PI=<PI> (PI shortname, used for ~/projects/def-<PI>) before submitting — or run inside a Slurm job}"
   if [[ "$VIGNOCR_ACCOUNT" == "def-<PI>" || "$VIGNOCR_PI" == "<PI>" ]]; then
     vdie "VIGNOCR_ACCOUNT / VIGNOCR_PI still hold the placeholder. Set them to your real allocation, e.g. export VIGNOCR_ACCOUNT=def-smith VIGNOCR_PI=smith"
   fi

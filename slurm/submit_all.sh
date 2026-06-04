@@ -20,8 +20,8 @@
 #
 # ---------------------------------------------------------------------------
 # USAGE
-#   export VIGNOCR_ACCOUNT=def-<PI>      # e.g. def-smith   (required)
-#   export VIGNOCR_PI=<PI>               # e.g. smith       (required)
+#   export VIGNOCR_ACCOUNT=def-khenni    # e.g. def-smith   (required)
+#   export VIGNOCR_PI=ydait               # e.g. smith       (required)
 #   bash slurm/submit_all.sh             # submit the whole DAG
 #   bash slurm/submit_all.sh --ddp       # use the multi-GPU (02b) training stage
 #   bash slurm/submit_all.sh --test-only # validate every job's directives, submit nothing

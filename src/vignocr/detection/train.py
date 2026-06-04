@@ -190,10 +190,14 @@ def _resolve_pretrained_weights(cfg: dict[str, Any]) -> str | None:
         1. cfg.model.pretrain_weights (explicit)               -> use as-is
         2. env VIGNOCR_PRETRAINED_RFDETR (explicit)            -> use as-is
         3. $VIGNOCR_PRETRAINED_DIR/rfdetr_medium_coco.pth      -> use if exists
-        4. None  (rfdetr will then try the Hub — only OK on login node)
+        4. ~/.roboflow/models/rf-detr-medium.pth               -> use if exists
+           (rfdetr 1.x caches its hosted models here; if the user ever called
+           RFDETRMedium() on the login node, the file is already there)
+        5. $ROBOFLOW_MODELS_DIR/rf-detr-medium.pth             -> use if exists
+        6. None  (rfdetr will then try the Hub — only OK on login node)
 
-    Cases (1)-(3) are CACHE HITS — the function returns a path to a real file.
-    Case (4) is the only path that needs internet; we let the caller decide
+    Cases (1)-(5) are CACHE HITS — the function returns a path to a real file.
+    Case (6) is the only path that needs internet; we let the caller decide
     whether to allow it (compute-node jobs refuse, login-node smoke tests can
     opt in via VIGNOCR_ALLOW_ONLINE_PRETRAIN=1).
     """
@@ -213,10 +217,21 @@ def _resolve_pretrained_weights(cfg: dict[str, Any]) -> str | None:
 
     cache_dir = os.environ.get("VIGNOCR_PRETRAINED_DIR")
     if cache_dir:
-        for name in ("rfdetr_medium_coco.pth", "rf-detr-medium-coco.pth"):
+        for name in ("rfdetr_medium_coco.pth", "rf-detr-medium-coco.pth",
+                     "rf-detr-medium.pth"):
             p = Path(cache_dir) / name
             if p.is_file():
                 return str(p)
+
+    # rfdetr 1.x's CANONICAL cache dir — `~/.roboflow/models/`. The library
+    # writes here on first construction (RFDETRMedium auto-downloads to this
+    # path). Override the prefix with $ROBOFLOW_MODELS_DIR.
+    roboflow_dir = Path(os.environ.get("ROBOFLOW_MODELS_DIR",
+                                       str(Path.home() / ".roboflow" / "models")))
+    for name in ("rf-detr-medium.pth", "rf-detr-medium-coco.pth"):
+        p = roboflow_dir / name
+        if p.is_file():
+            return str(p)
 
     return None
 

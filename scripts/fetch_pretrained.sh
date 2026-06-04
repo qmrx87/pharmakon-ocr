@@ -109,6 +109,29 @@ fi
 RFDETR_URL="${VIGNOCR_PRETRAINED_RFDETR_URL:-https://storage.googleapis.com/rfdetr/rf-detr-medium.pth}"
 RFDETR_MAGIC_NAME="${VIGNOCR_PRETRAINED_RFDETR_MAGIC:-rf-detr-medium.pth}"
 
+# rfdetr's CANONICAL cache location (discovered the hard way: rfdetr 1.x
+# downloads its hosted models into ~/.roboflow/models/<name>.pth, NOT into
+# TORCH_HOME). Always check this path FIRST — if rfdetr ever pulled the file
+# (e.g. during a previous successful construction), it's sitting right here.
+ROBOFLOW_CACHE="${ROBOFLOW_MODELS_DIR:-$HOME/.roboflow/models}"
+if [[ -f "$ROBOFLOW_CACHE/$RFDETR_MAGIC_NAME" && -s "$ROBOFLOW_CACHE/$RFDETR_MAGIC_NAME" ]]; then
+  vlog "found pretrained weights in rfdetr's own cache: $ROBOFLOW_CACHE/$RFDETR_MAGIC_NAME"
+  mkdir -p "$(dirname "$RFDETR_OUT")"
+  cp -f "$ROBOFLOW_CACHE/$RFDETR_MAGIC_NAME" "$RFDETR_OUT"
+  vlog "copied -> $RFDETR_OUT ($(du -h "$RFDETR_OUT" | cut -f1))"
+  # Record provenance + bail out (we're done).
+  {
+    echo "rfdetr_medium_coco.pth: $RFDETR_OUT"
+    echo "size_bytes: $(stat -c%s "$RFDETR_OUT" 2>/dev/null || stat -f%z "$RFDETR_OUT" 2>/dev/null || echo unknown)"
+    echo "fetched_at: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    echo "host: $(hostname)"
+    echo "source: $ROBOFLOW_CACHE/$RFDETR_MAGIC_NAME (rfdetr internal cache)"
+  } > "$OUT_DIR/MANIFEST.txt"
+  vlog "pretrained cache ready: $OUT_DIR"
+  vlog "the detection trainer will pick this up automatically via VIGNOCR_PRETRAINED_DIR."
+  exit 0
+fi
+
 if [[ -f "$RFDETR_OUT" && -s "$RFDETR_OUT" ]]; then
   vlog "reusing existing pretrained weights: $RFDETR_OUT ($(du -h "$RFDETR_OUT" | cut -f1))"
 else
@@ -138,6 +161,8 @@ out.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _candidate_dirs():
+    # rfdetr's REAL cache directory (1.x writes here, not under TORCH_HOME).
+    yield Path(os.environ.get("ROBOFLOW_MODELS_DIR", str(Path.home() / ".roboflow" / "models")))
     th = Path(os.environ.get("TORCH_HOME", str(Path.home() / ".cache" / "torch")))
     yield th / "hub" / "checkpoints"
     yield th
@@ -175,15 +200,45 @@ def _find_cached(magic_name):
 def _save_state_dict(model_obj, out_path):
     """Last-resort: dump the constructed model's state_dict to disk.
 
-    rfdetr's RFDETRMedium wraps a torch.nn.Module accessible via .model. We
-    save BOTH the model state_dict AND a minimal checkpoint-style dict (the
-    'model' key) so it loads under either schema rfdetr might expect.
+    rfdetr's RFDETRMedium wraps a `ModelContext` (NOT a torch.nn.Module). The
+    actual torch.nn.Module lives several levels deep. We walk likely attribute
+    paths to find an object that has `.state_dict()` — typically:
+        m -> m.model              # ModelContext
+        m -> m.model.model        # the inner DETR
+        m -> m.model.model.module # if DataParallel-wrapped
     """
     import torch
-    if hasattr(model_obj, "model"):
-        sd = model_obj.model.state_dict()
-    else:
-        sd = model_obj.state_dict()
+
+    def _find_nn_module(obj, depth=0, max_depth=5):
+        if depth > max_depth:
+            return None
+        # An object whose state_dict() returns a non-empty dict and which has
+        # actual parameters is what we want.
+        sd_fn = getattr(obj, "state_dict", None)
+        if callable(sd_fn):
+            try:
+                sd = sd_fn()
+                if isinstance(sd, dict) and len(sd) > 0:
+                    return obj
+            except Exception:
+                pass
+        # Probe likely wrapper attributes.
+        for attr in ("model", "module", "net", "backbone_with_pos_enc",
+                     "_orig_model", "transformer", "detr"):
+            child = getattr(obj, attr, None)
+            if child is not None and child is not obj:
+                found = _find_nn_module(child, depth + 1, max_depth)
+                if found is not None:
+                    return found
+        return None
+
+    mod = _find_nn_module(model_obj)
+    if mod is None:
+        raise AttributeError(
+            f"could not find a torch.nn.Module under {type(model_obj).__name__}; "
+            "walked .model / .module / .net / .backbone_with_pos_enc / ..."
+        )
+    sd = mod.state_dict()
     ckpt = {"model": sd}
     torch.save(ckpt, str(out_path))
     return out_path

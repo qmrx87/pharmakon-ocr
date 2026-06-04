@@ -563,13 +563,29 @@ vignocr_find_best() {
 # checks this — it's exposed here so the .sbatch can log "using cached weights:
 # <path>" up front. Returns empty if nothing is cached (the trainer will then
 # raise the offline-init error with a clear next-step).
+#
+# Probe order MIRRORS train.py::_resolve_pretrained_weights:
+#   1. $VIGNOCR_PRETRAINED_RFDETR (explicit override)
+#   2. $VIGNOCR_PRETRAINED_DIR/{rfdetr_medium_coco.pth, rf-detr-medium.pth}
+#   3. ~/.roboflow/models/rf-detr-medium.pth  (rfdetr 1.x's canonical cache)
 vignocr_pretrained_weights() {
   local cfg="${1:-${VIGNOCR_DETECTION_CONFIG:-detection/rfdetr_medium}}"
-  # The cfg name's LAST segment is the model variant (rfdetr_medium, rfdetr_vignette).
-  # Stage A and B share the same RF-DETR backbone, so they read the SAME file —
-  # callers can override via VIGNOCR_PRETRAINED_RFDETR.
-  local f="${VIGNOCR_PRETRAINED_RFDETR:-$VIGNOCR_PRETRAINED_DIR/rfdetr_medium_coco.pth}"
-  [[ -f "$f" ]] && echo "$f" || echo ""
+
+  # 1) explicit env override
+  if [[ -n "${VIGNOCR_PRETRAINED_RFDETR:-}" && -f "${VIGNOCR_PRETRAINED_RFDETR}" ]]; then
+    echo "$VIGNOCR_PRETRAINED_RFDETR"; return
+  fi
+  # 2) our centralized cache
+  local d="${VIGNOCR_PRETRAINED_DIR:-$VIGNOCR_PROJECT_DIR/checkpoints/pretrained}"
+  for n in rfdetr_medium_coco.pth rf-detr-medium-coco.pth rf-detr-medium.pth; do
+    [[ -f "$d/$n" ]] && { echo "$d/$n"; return; }
+  done
+  # 3) rfdetr's own cache (the canonical 1.x location)
+  local rf="${ROBOFLOW_MODELS_DIR:-$HOME/.roboflow/models}"
+  for n in rf-detr-medium.pth rf-detr-medium-coco.pth; do
+    [[ -f "$rf/$n" ]] && { echo "$rf/$n"; return; }
+  done
+  echo ""
 }
 
 # vignocr_install_postmortem <stage>: register an EXIT trap that, if the job

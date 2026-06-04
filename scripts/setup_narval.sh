@@ -146,6 +146,48 @@ else
     || vdie "core --no-index install also failed — inspect the wheelhouse with avail_wheels"
 fi
 
+# SAFETY NET — torch's LAZY transitive imports.
+# torch._dynamo (imported by torchvision.ops -> roi_align) does runtime `import
+# sympy / networkx / jinja2 / fsspec / filelock`. The torch wheel doesn't
+# declare these as hard deps, so `pip install --no-index -e .[ml]` can SKIP
+# them depending on resolver behavior. We then crash at training-time with a
+# bare "ModuleNotFoundError: No module named 'sympy'". Belt-and-suspenders:
+# explicitly install them here. Idempotent (pip just verifies if present).
+vlog "ensuring torch lazy-deps are present (sympy/networkx/jinja2/filelock/fsspec/typing_extensions)"
+python -m pip install --no-index --upgrade \
+    sympy networkx jinja2 filelock fsspec typing_extensions \
+  || vwarn "could not install torch's lazy deps from the wheelhouse — if training fails with ModuleNotFoundError, run: pip install --no-index <missing-module>"
+
+# Verify the critical import chain on CPU NOW so we catch wheelhouse gaps BEFORE
+# wasting a GPU allocation. This walks rfdetr → torchvision → torch._dynamo →
+# sympy, the chain that crashed the user's first training run.
+vlog "verifying ML import chain (rfdetr -> torchvision -> torch._dynamo -> sympy):"
+if python - <<'PY' 2>&1
+import importlib, sys
+modules = ["sympy", "networkx", "jinja2", "filelock", "fsspec",
+           "torch", "torch._dynamo", "torchvision", "torchvision.ops", "rfdetr"]
+failed = []
+for m in modules:
+    try:
+        importlib.import_module(m)
+        print(f"    OK  {m}")
+    except Exception as e:
+        print(f"    FAIL {m}: {e.__class__.__name__}: {e}")
+        failed.append(m)
+if failed:
+    print(f"!! {len(failed)} module(s) failed to import — training WILL crash")
+    sys.exit(1)
+print("    -- import chain healthy --")
+PY
+then
+  vlog "ML import chain OK — training is unblocked"
+else
+  vwarn "ML import chain has gaps. Training will crash. Fix BEFORE submitting:"
+  vwarn "  source $VIGNOCR_VENV_DIR/bin/activate"
+  vwarn "  pip install --no-index <missing-module>"
+  vwarn "  # Discover what the wheelhouse has: avail_wheels <module>"
+fi
+
 # Record the exact resolved environment next to the venv for provenance.
 python -m pip freeze > "$VIGNOCR_SCRATCH_DIR/pip_freeze.setup.txt" 2>/dev/null || true
 vlog "recorded resolved versions -> $VIGNOCR_SCRATCH_DIR/pip_freeze.setup.txt"

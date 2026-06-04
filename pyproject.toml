@@ -52,6 +52,19 @@ dependencies = [
 ml = [
   "torch>=2.4",
   "torchvision>=0.19",
+  # torch's LAZY/transitive deps. The torch wheel doesn't always declare these
+  # as hard requirements, but torch._dynamo (imported transitively from
+  # torchvision.ops -> roi_align -> _dynamo) does `import sympy / networkx /
+  # jinja2 / fsspec / filelock` at runtime. On Compute Canada's wheelhouse,
+  # `pip install --no-index -e .[ml]` skips deps the parent doesn't declare —
+  # so we declare them HERE so they always land in the venv. This avoids the
+  # silent "ModuleNotFoundError: No module named 'sympy'" we hit at runtime.
+  "sympy",
+  "networkx",
+  "jinja2",
+  "filelock",
+  "fsspec",
+  "typing_extensions",
   "rfdetr>=1.1",
   "onnx>=1.17",
   "onnxruntime>=1.20",

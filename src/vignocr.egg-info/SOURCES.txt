@@ -20,6 +20,7 @@ src/vignocr/data/stats.py
 src/vignocr/data/synthetic.py
 src/vignocr/data/validate.py
 src/vignocr/detection/__init__.py
+src/vignocr/detection/_resolve.py
 src/vignocr/detection/eval.py
 src/vignocr/detection/export.py
 src/vignocr/detection/infer.py
@@ -29,7 +30,9 @@ src/vignocr/nomenclature/correct.py
 src/vignocr/nomenclature/loader.py
 src/vignocr/nomenclature/match.py
 src/vignocr/ocr/__init__.py
+src/vignocr/ocr/autolabel.py
 src/vignocr/ocr/eval.py
+src/vignocr/ocr/finetune.py
 src/vignocr/ocr/infer.py
 src/vignocr/ocr/preprocess.py
 src/vignocr/ocr/train.py
@@ -39,6 +42,7 @@ src/vignocr/parsing/codes.py
 src/vignocr/parsing/dates.py
 src/vignocr/parsing/money.py
 src/vignocr/parsing/ppa.py
+src/vignocr/parsing/ppa_shp.py
 src/vignocr/parsing/record.py
 src/vignocr/pipeline/__init__.py
 src/vignocr/pipeline/orchestrator.py
@@ -55,3 +59,4 @@ tests/test_nomenclature_correction.py
 tests/test_parsing_checksum.py
 tests/test_pipeline_e2e.py
 tests/test_serving_api.py
+tests/test_stages_a_and_c.py

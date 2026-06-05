@@ -1,0 +1,9 @@
+[vignocr 2026-06-03T16:58:55-0400] module load StdEnv/2023 python/3.11 cuda/12.6
+[vignocr 2026-06-03T16:58:56-0400] venv active: /lustre07/scratch/ydait/vignocr/venv/bin/python (Python 3.11.5)
+[vignocr 2026-06-03T16:59:08-0400] in-repo dataset dir is real + non-empty (/lustre06/project/6075472/ydait/pharmakon-ocr/data) — leaving it as-is
+[vignocr 2026-06-03T16:59:09-0400] NEW run stage=01_validate run_dir=/home/ydait/scratch/vignocr/runs/01_validate/20260603T205908Z-50e8eef2163f-dirty
+[vignocr 2026-06-03T16:59:43-0400] seed=1337  data_active=real
+[vignocr 2026-06-03T16:59:43-0400] logs/slurm: /home/ydait/projects/def-khenni/ydait/pharmakon-ocr/logs/slurm/01_validate/62316896
+[vignocr 2026-06-03T16:59:43-0400] stage 01 validate_data (root=/lustre06/project/6075472/ydait/pharmakon-ocr/data) -> /home/ydait/scratch/vignocr/runs/01_validate/20260603T205908Z-50e8eef2163f-dirty/validate.log
+[vignocr 2026-06-03T16:59:45-0400] stage 01 complete — dataset integrity OK. run_dir=/home/ydait/scratch/vignocr/runs/01_validate/20260603T205908Z-50e8eef2163f-dirty
+/home/ydait/projects/def-khenni/ydait/pharmakon-ocr/slurm/lib.sh: line 515: jlog: unbound variable

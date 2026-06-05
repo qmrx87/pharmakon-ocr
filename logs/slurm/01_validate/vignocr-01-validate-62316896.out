@@ -1,0 +1,120 @@
+[stats] per-split: {'train': {'images': 542, 'annotations': 5592}, 'valid': {'images': 154, 'annotations': 1555}, 'test': {'images': 77, 'annotations': 792}}
+[stats] per-class: {'date_exp': 754, 'date_fab': 746, 'dci': 846, 'dosage': 88, 'forme': 906, 'laboratoire': 776, 'num_enregistrement': 782, 'num_lot': 734, 'ppa': 604, 'ppa_shp': 570, 'product_name': 785, 'tr': 348}
+[2m2026-06-03T20:59:45.482908Z[0m [[32m[1minfo     [0m] [1mintegrity_warning             [0m [36mmsg[0m=[35m"[train] missing business-critical field classes: ['prix', 'shp'] (combined/aliased in this annotation — see data.yaml)"[0m
+[2m2026-06-03T20:59:45.485327Z[0m [[32m[1minfo     [0m] [1mintegrity_warning             [0m [36mmsg[0m=[35m"[valid] missing business-critical field classes: ['prix', 'shp'] (combined/aliased in this annotation — see data.yaml)"[0m
+[2m2026-06-03T20:59:45.486547Z[0m [[32m[1minfo     [0m] [1mintegrity_warning             [0m [36mmsg[0m=[35m"[test] missing business-critical field classes: ['prix', 'shp'] (combined/aliased in this annotation — see data.yaml)"[0m
+[validate] report: {
+  "ok": true,
+  "root": "/lustre06/project/6075472/ydait/pharmakon-ocr/data",
+  "dataset_name": "real",
+  "splits_checked": [
+    "train",
+    "valid",
+    "test"
+  ],
+  "errors": [],
+  "warnings": [
+    "[train] missing business-critical field classes: ['prix', 'shp'] (combined/aliased in this annotation — see data.yaml)",
+    "[valid] missing business-critical field classes: ['prix', 'shp'] (combined/aliased in this annotation — see data.yaml)",
+    "[test] missing business-critical field classes: ['prix', 'shp'] (combined/aliased in this annotation — see data.yaml)"
+  ],
+  "per_split": {
+    "train": {
+      "images": 542,
+      "annotations": 5592,
+      "categories": [
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "num_lot",
+        "num_enregistrement",
+        "ppa",
+        "ppa_shp",
+        "product_name",
+        "tr"
+      ],
+      "present_field_classes": [
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "num_enregistrement",
+        "num_lot",
+        "ppa",
+        "ppa_shp",
+        "product_name",
+        "tr"
+      ]
+    },
+    "valid": {
+      "images": 154,
+      "annotations": 1555,
+      "categories": [
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "num_lot",
+        "num_enregistrement",
+        "ppa",
+        "ppa_shp",
+        "product_name",
+        "tr"
+      ],
+      "present_field_classes": [
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "num_enregistrement",
+        "num_lot",
+        "ppa",
+        "ppa_shp",
+        "product_name",
+        "tr"
+      ]
+    },
+    "test": {
+      "images": 77,
+      "annotations": 792,
+      "categories": [
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "num_lot",
+        "num_enregistrement",
+        "ppa",
+        "ppa_shp",
+        "product_name",
+        "tr"
+      ],
+      "present_field_classes": [
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "num_enregistrement",
+        "num_lot",
+        "ppa",
+        "ppa_shp",
+        "product_name",
+        "tr"
+      ]
+    }
+  }
+}
+[validate] integrity OK

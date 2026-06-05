@@ -1,0 +1,45 @@
+    0, NVIDIA A100-SXM4-40GB, 40960 MiB, 0 MiB
+[2m2026-06-04T01:58:09.151217Z[0m [[32m[1minfo     [0m] [1mtrain.snapshot                [0m [36mgit_sha[0m=[35m07d9be6a5e7c8a498303eb0c0ff8adea577a3bf9-dirty[0m [36mrun_dir[0m=[35m/home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T015533Z-07d9be6a5e7c-dirty[0m
+Traceback (most recent call last):
+  File "/lustre06/project/6075472/ydait/pharmakon-ocr/src/vignocr/detection/train.py", line 252, in run
+    from rfdetr import RFDETRMedium
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/rfdetr/__init__.py", line 50, in <module>
+    from rfdetr.detr import RFDETR
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/rfdetr/detr.py", line 28, in <module>
+    import torchvision.transforms.functional as F  # noqa: N812
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torchvision/__init__.py", line 8, in <module>
+    from torchvision import (
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torchvision/models/__init__.py", line 2, in <module>
+    from .convnext import *
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torchvision/models/convnext.py", line 9, in <module>
+    from ..ops.misc import Conv2dNormActivation, Permute
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torchvision/ops/__init__.py", line 23, in <module>
+    from .poolers import MultiScaleRoIAlign
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torchvision/ops/poolers.py", line 10, in <module>
+    from .roi_align import roi_align
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torchvision/ops/roi_align.py", line 7, in <module>
+    from torch._dynamo.utils import is_compile_supported
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/_dynamo/__init__.py", line 13, in <module>
+    from . import (
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/_dynamo/aot_compile.py", line 17, in <module>
+    from torch._dynamo.convert_frame import GraphRuntimeEnv
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/_dynamo/convert_frame.py", line 62, in <module>
+    from torch._dynamo.symbolic_convert import TensorifyState
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/_dynamo/symbolic_convert.py", line 54, in <module>
+    from torch._dynamo.exc import ObservedException, TensorifyScalarRestartAnalysis
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/_dynamo/exc.py", line 44, in <module>
+    from .utils import counters
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/_dynamo/utils.py", line 68, in <module>
+    import torch.fx.experimental.symbolic_shapes
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/torch/fx/experimental/symbolic_shapes.py", line 3, in <module>
+    import sympy
+ModuleNotFoundError: No module named 'sympy'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "/lustre06/project/6075472/ydait/pharmakon-ocr/src/vignocr/detection/train.py", line 254, in run
+    raise ImportError(_ML_HINT) from exc
+ImportError: Detection training needs the ML extra. Run: pip install -e .[ml]

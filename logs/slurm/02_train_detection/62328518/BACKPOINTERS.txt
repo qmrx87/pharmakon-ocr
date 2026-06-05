@@ -1,0 +1,5 @@
+stage:     02_train_detection
+job:       62328518
+node:      ng30601
+run_dir:   /home/ydait/scratch/vignocr/runs/02_train_detection/20260604T015533Z-07d9be6a5e7c-dirty
+started:   2026-06-04T01:55:34Z

@@ -1,0 +1,26 @@
+[vignocr 2026-06-04T04:55:55-0400] module load StdEnv/2023 python/3.11 cuda/12.6
+[vignocr 2026-06-04T04:55:55-0400] venv active: /lustre07/scratch/ydait/vignocr/venv/bin/python (Python 3.11.5)
+[vignocr 2026-06-04T04:56:17-0400] in-repo dataset dir is real + non-empty (/home/ydait/projects/def-khenni/ydait/pharmakon-ocr/fixtures/synthetic) — leaving it as-is
+[vignocr 2026-06-04T04:56:19-0400] NEW run stage=02a_train_vignette run_dir=/home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T085617Z-3a382ee74a37-dirty
+[vignocr 2026-06-04T04:56:49-0400] seed=1337  data_active=<data.yaml default>
+[vignocr 2026-06-04T04:56:49-0400] logs/slurm: /home/ydait/projects/def-khenni/ydait/pharmakon-ocr/logs/slurm/02a_train_vignette/62332571
+[vignocr 2026-06-04T04:56:49-0400] WARN: no cached pretrained weights at $VIGNOCR_PRETRAINED_DIR — run 'bash scripts/fetch_pretrained.sh' on the LOGIN node first to avoid a 6-min hub-download timeout on compute
+[vignocr 2026-06-04T04:56:49-0400] GPU check before training:
+[vignocr 2026-06-04T04:56:49-0400] launching RF-DETR vignette training: config=detection/rfdetr_vignette seed=1337 run_dir=/home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T085617Z-3a382ee74a37-dirty
+[vignocr 2026-06-04T05:06:22-0400] FATAL: vignette training failed (rc=1) — see /home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T085617Z-3a382ee74a37-dirty/train_vignette.log
+
+==============================================================
+ POST-MORTEM: last 200 lines of /home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T085617Z-3a382ee74a37-dirty/train_vignette.log
+==============================================================
+[2m2026-06-04T08:58:58.879585Z[0m [[32m[1minfo     [0m] [1mtrain.snapshot                [0m [36mgit_sha[0m=[35m3a382ee74a37a4556851d25653a148967f8374bd-dirty[0m [36mrun_dir[0m=[35m/home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T085617Z-3a382ee74a37-dirty[0m
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "/lustre06/project/6075472/ydait/pharmakon-ocr/src/vignocr/detection/train.py", line 280, in run
+    raise FileNotFoundError(_OFFLINE_HINT)
+FileNotFoundError: RF-DETR has no cached COCO-pretrained weights and no resume checkpoint. On offline compute nodes (Narval) a fresh init would hang trying to download from the Hub. Pre-fetch the weights ONCE on the login node:
+    bash scripts/fetch_pretrained.sh
+This caches them under $VIGNOCR_PRETRAINED_DIR; the trainer then picks them up automatically on every subsequent compute-node submission.
+If you intentionally want online init (login-node smoke test), unset the offline hint by exporting VIGNOCR_ALLOW_ONLINE_PRETRAIN=1.
+==============================================================
+ Full log was copied to: /home/ydait/projects/def-khenni/ydait/pharmakon-ocr/logs/slurm/02a_train_vignette/62332571/train_vignette.log
+==============================================================

@@ -1,0 +1,38 @@
+[vignocr 2026-06-05T07:08:27-0400] module load StdEnv/2023 python/3.11 cuda/12.6
+[vignocr 2026-06-05T07:08:28-0400] venv active: /lustre07/scratch/ydait/vignocr/venv/bin/python (Python 3.11.5)
+[vignocr 2026-06-05T07:08:52-0400] in-repo dataset dir is real + non-empty (/home/ydait/projects/def-khenni/ydait/pharmakon-ocr/fixtures/synthetic) — leaving it as-is
+[vignocr 2026-06-05T07:09:08-0400] NEW run stage=02_train_detection run_dir=/home/ydait/scratch/vignocr/runs/02_train_detection/20260605T110852Z-efbd60410cd1-dirty
+[vignocr 2026-06-05T07:09:39-0400] seed=1337  data_active=<data.yaml default>
+[vignocr 2026-06-05T07:09:39-0400] logs/slurm: /home/ydait/projects/def-khenni/ydait/pharmakon-ocr/logs/slurm/02_train_detection/62369142
+[vignocr 2026-06-05T07:09:39-0400] pretrained weights (cached, offline-safe): /home/ydait/projects/def-khenni/vignocr/checkpoints/pretrained/rfdetr_medium_coco.pth
+[vignocr 2026-06-05T07:09:39-0400] GPU check before training:
+[vignocr 2026-06-05T07:09:39-0400] launching RF-DETR training (single A100): config=detection/rfdetr_medium seed=1337 run_dir=/home/ydait/scratch/vignocr/runs/02_train_detection/20260605T110852Z-efbd60410cd1-dirty
+[vignocr 2026-06-05T07:17:44-0400] FATAL: detection training failed (rc=1) — see /home/ydait/scratch/vignocr/runs/02_train_detection/20260605T110852Z-efbd60410cd1-dirty/train_detection.log
+
+==============================================================
+ POST-MORTEM: last 200 lines of /home/ydait/scratch/vignocr/runs/02_train_detection/20260605T110852Z-efbd60410cd1-dirty/train_detection.log
+==============================================================
+[2m2026-06-05T11:11:37.901909Z[0m [[32m[1minfo     [0m] [1mtrain.snapshot                [0m [36mgit_sha[0m=[35mefbd60410cd18f33f2d1fbfc67dd1095afe24d81-dirty[0m [36mrun_dir[0m=[35m/home/ydait/scratch/vignocr/runs/02_train_detection/20260605T110852Z-efbd60410cd1-dirty[0m
+[2m2026-06-05T11:17:36.558438Z[0m [[32m[1minfo     [0m] [1mtrain.start                   [0m [36mbatch_size[0m=[35m4[0m [36mdataset[0m=[35m/lustre06/project/6075472/ydait/pharmakon-ocr/data[0m [36mepochs[0m=[35m50[0m [36minit_source[0m=[35mcache[0m [36mmodel[0m=[35mrfdetr_medium[0m [36mnum_classes[0m=[35m17[0m [36mpretrain_weights[0m=[35m/home/ydait/projects/def-khenni/vignocr/checkpoints/pretrained/rfdetr_medium_coco.pth[0m [36mresolution[0m=[35m640[0m [36mresume[0m=[35mNone[0m
+[2026-06-05 07:17:37] [WARNING] rf-detr - Using a different number of positional encodings than DINOv2, which means we're not loading DINOv2 backbone weights. This is not a problem if finetuning a pretrained RF-DETR model.
+[2026-06-05 07:17:37] [WARNING] rf-detr - Using patch size 16 instead of 14, which means we're not loading DINOv2 backbone weights. This is not a problem if finetuning a pretrained RF-DETR model.
+[2026-06-05 07:17:39] [WARNING] rf-detr - Checkpoint has 90 classes but model is configured for 17. The detection head will be re-initialized to 17 classes.
+Traceback (most recent call last):
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/rfdetr/detr.py", line 517, in train
+    from rfdetr.training import RFDETRDataModule, RFDETRModelModule, build_trainer
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/rfdetr/training/__init__.py", line 16, in <module>
+    from pytorch_lightning import seed_everything
+ModuleNotFoundError: No module named 'pytorch_lightning'
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "<stdin>", line 5, in <module>
+  File "/lustre06/project/6075472/ydait/pharmakon-ocr/src/vignocr/detection/train.py", line 389, in run
+    model.train(**train_kwargs)
+  File "/lustre07/scratch/ydait/vignocr/venv/lib/python3.11/site-packages/rfdetr/detr.py", line 524, in train
+    raise ImportError(
+ImportError: RF-DETR training dependencies are missing. Install them with `pip install "rfdetr[train,loggers]"` and try again.
+==============================================================
+ Full log was copied to: /home/ydait/projects/def-khenni/ydait/pharmakon-ocr/logs/slurm/02_train_detection/62369142/train_detection.log
+==============================================================

@@ -1,0 +1,5 @@
+stage:     01_validate
+job:       62317745
+node:      nc30601
+run_dir:   /home/ydait/scratch/vignocr/runs/01_validate/20260603T211105Z-bd93314e00b9-dirty
+started:   2026-06-03T21:11:06Z

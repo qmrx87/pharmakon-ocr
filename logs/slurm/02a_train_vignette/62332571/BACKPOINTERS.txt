@@ -1,0 +1,5 @@
+stage:     02a_train_vignette
+job:       62332571
+node:      ng30706
+run_dir:   /home/ydait/scratch/vignocr/runs/02a_train_vignette/20260604T085617Z-3a382ee74a37-dirty
+started:   2026-06-04T08:56:19Z

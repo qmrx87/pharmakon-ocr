@@ -1,0 +1,137 @@
+[stats] per-split: {'train': {'images': 12, 'annotations': 180}, 'valid': {'images': 4, 'annotations': 60}, 'test': {'images': 4, 'annotations': 60}}
+[stats] per-class: {'color_band': 20, 'date_exp': 20, 'date_fab': 20, 'dci': 20, 'dosage': 20, 'entete': 20, 'forme': 20, 'laboratoire': 20, 'num_enregistrement': 20, 'num_lot': 20, 'ppa': 20, 'prix': 20, 'product_name': 20, 'shp': 20, 'vin': 20}
+[validate] report: {
+  "ok": true,
+  "root": "/home/ydait/projects/def-khenni/ydait/pharmakon-ocr/fixtures/synthetic",
+  "dataset_name": "synthetic",
+  "splits_checked": [
+    "train",
+    "valid",
+    "test"
+  ],
+  "errors": [],
+  "warnings": [],
+  "per_split": {
+    "train": {
+      "images": 12,
+      "annotations": 180,
+      "categories": [
+        "ppa",
+        "prix",
+        "shp",
+        "num_enregistrement",
+        "num_lot",
+        "date_fab",
+        "date_exp",
+        "product_name",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "entete",
+        "vin",
+        "color_band",
+        "ppa_shp",
+        "tr"
+      ],
+      "present_field_classes": [
+        "color_band",
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "entete",
+        "forme",
+        "laboratoire",
+        "num_enregistrement",
+        "num_lot",
+        "ppa",
+        "prix",
+        "product_name",
+        "shp",
+        "vin"
+      ]
+    },
+    "valid": {
+      "images": 4,
+      "annotations": 60,
+      "categories": [
+        "ppa",
+        "prix",
+        "shp",
+        "num_enregistrement",
+        "num_lot",
+        "date_fab",
+        "date_exp",
+        "product_name",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "entete",
+        "vin",
+        "color_band",
+        "ppa_shp",
+        "tr"
+      ],
+      "present_field_classes": [
+        "color_band",
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "entete",
+        "forme",
+        "laboratoire",
+        "num_enregistrement",
+        "num_lot",
+        "ppa",
+        "prix",
+        "product_name",
+        "shp",
+        "vin"
+      ]
+    },
+    "test": {
+      "images": 4,
+      "annotations": 60,
+      "categories": [
+        "ppa",
+        "prix",
+        "shp",
+        "num_enregistrement",
+        "num_lot",
+        "date_fab",
+        "date_exp",
+        "product_name",
+        "dci",
+        "dosage",
+        "forme",
+        "laboratoire",
+        "entete",
+        "vin",
+        "color_band",
+        "ppa_shp",
+        "tr"
+      ],
+      "present_field_classes": [
+        "color_band",
+        "date_exp",
+        "date_fab",
+        "dci",
+        "dosage",
+        "entete",
+        "forme",
+        "laboratoire",
+        "num_enregistrement",
+        "num_lot",
+        "ppa",
+        "prix",
+        "product_name",
+        "shp",
+        "vin"
+      ]
+    }
+  }
+}
+[validate] integrity OK

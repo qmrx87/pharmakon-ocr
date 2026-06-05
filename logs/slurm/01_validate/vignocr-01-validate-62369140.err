@@ -1,0 +1,8 @@
+[vignocr 2026-06-04T15:05:44-0400] module load StdEnv/2023 python/3.11 cuda/12.6
+[vignocr 2026-06-04T15:05:45-0400] venv active: /lustre07/scratch/ydait/vignocr/venv/bin/python (Python 3.11.5)
+[vignocr 2026-06-04T15:06:17-0400] in-repo dataset dir is real + non-empty (/home/ydait/projects/def-khenni/ydait/pharmakon-ocr/fixtures/synthetic) — leaving it as-is
+[vignocr 2026-06-04T15:06:37-0400] NEW run stage=01_validate run_dir=/home/ydait/scratch/vignocr/runs/01_validate/20260604T190618Z-efbd60410cd1-dirty
+[vignocr 2026-06-04T15:07:20-0400] seed=1337  data_active=<data.yaml default>
+[vignocr 2026-06-04T15:07:20-0400] logs/slurm: /home/ydait/projects/def-khenni/ydait/pharmakon-ocr/logs/slurm/01_validate/62369140
+[vignocr 2026-06-04T15:07:20-0400] stage 01 validate_data (root=/home/ydait/projects/def-khenni/ydait/pharmakon-ocr/fixtures/synthetic) -> /home/ydait/scratch/vignocr/runs/01_validate/20260604T190618Z-efbd60410cd1-dirty/validate.log
+[vignocr 2026-06-04T15:07:24-0400] stage 01 complete — dataset integrity OK. run_dir=/home/ydait/scratch/vignocr/runs/01_validate/20260604T190618Z-efbd60410cd1-dirty

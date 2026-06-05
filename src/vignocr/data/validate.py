@@ -72,11 +72,20 @@ def _stem(file_name: str) -> str:
     return Path(file_name).stem
 
 
-def check_integrity(root: Path | str) -> IntegrityReport:
+def check_integrity(
+    root: Path | str, dataset: dict[str, Any] | None = None
+) -> IntegrityReport:
     """Validate the dataset at ``root`` against ``data.yaml`` integrity flags.
 
     Args:
         root: dataset root containing per-split dirs with ``_annotations.coco.json``.
+        dataset: the resolved ``data.yaml`` dataset block to validate AGAINST
+            (its splits / class_names / aliases / severity flags). When ``None``
+            falls back to :func:`get_active_dataset`. Passing it explicitly lets a
+            caller validate the SAME datasets training binds to (Stage B ``real`` +
+            Stage A ``vignette``) instead of only the global ``active`` selector —
+            otherwise validation can green-light ``synthetic`` while training
+            consumes the real exports.
 
     Returns:
         An :class:`IntegrityReport` (always returned, even on warnings).
@@ -86,7 +95,7 @@ def check_integrity(root: Path | str) -> IntegrityReport:
             so the message lists every problem found).
     """
     root = Path(root)
-    ds = get_active_dataset()
+    ds = dataset if dataset is not None else get_active_dataset()
     integrity: dict[str, bool] = ds.get("_integrity", {})
     # Logical-split -> directory-name map for the active dataset (train/valid/test).
     split_dirs: list[str] = list(ds.get("splits", {}).values()) or ["train", "valid", "test"]

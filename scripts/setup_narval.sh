@@ -158,14 +158,29 @@ python -m pip install --no-index --upgrade \
     sympy networkx jinja2 filelock fsspec typing_extensions \
   || vwarn "could not install torch's lazy deps from the wheelhouse — if training fails with ModuleNotFoundError, run: pip install --no-index <missing-module>"
 
+# RF-DETR TRAINING stack. RF-DETR lazy-imports pytorch_lightning (+ torchmetrics,
+# lightning-utilities) the FIRST time model.train() runs — NOT at `import rfdetr`.
+# A bare rfdetr install therefore passes every import check and then crashes mid-
+# training (the exact failure we hit: "No module named 'pytorch_lightning'"). The
+# [train,loggers] extra SHOULD pull these, but --no-index editable installs can
+# skip extras the resolver doesn't surface, so we install them explicitly too.
+vlog "ensuring RF-DETR training stack is present (pytorch_lightning/torchmetrics/lightning-utilities)"
+python -m pip install --no-index --upgrade \
+    pytorch_lightning torchmetrics lightning_utilities \
+  || vwarn "could not install the Lightning training stack from the wheelhouse. Check: avail_wheels pytorch_lightning torchmetrics lightning_utilities ; training WILL crash without it."
+
 # Verify the critical import chain on CPU NOW so we catch wheelhouse gaps BEFORE
 # wasting a GPU allocation. This walks rfdetr → torchvision → torch._dynamo →
-# sympy, the chain that crashed the user's first training run.
-vlog "verifying ML import chain (rfdetr -> torchvision -> torch._dynamo -> sympy):"
+# sympy, the chain that crashed the user's first training run — AND, crucially,
+# `rfdetr.training` + `pytorch_lightning`, the TRAINING chain rfdetr lazy-imports
+# inside model.train(). The old verifier only checked `rfdetr` (inference) and so
+# green-lit a venv that still crashed at train time.
+vlog "verifying ML import chain (inference + TRAINING: rfdetr.training/pytorch_lightning):"
 if python - <<'PY' 2>&1
 import importlib, sys
 modules = ["sympy", "networkx", "jinja2", "filelock", "fsspec",
-           "torch", "torch._dynamo", "torchvision", "torchvision.ops", "rfdetr"]
+           "torch", "torch._dynamo", "torchvision", "torchvision.ops",
+           "rfdetr", "pytorch_lightning", "torchmetrics", "rfdetr.training"]
 failed = []
 for m in modules:
     try:

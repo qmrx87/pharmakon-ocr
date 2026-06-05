@@ -37,39 +37,66 @@ SLURM_DIR="$PROJECT_DIR/slurm"
 source "$SLURM_DIR/lib.sh"
 vignocr_preamble "01_validate"
 
-# Logs live inside the run dir for full provenance. Use the PACKAGE-resolved root
-# (synthetic -> fixtures/synthetic; real -> <repo>/data symlinked to project space)
-# so this agrees with the config-driven training stages.
+# Logs live inside the run dir for full provenance.
 LOG="$VIGNOCR_RUN_DIR/validate.log"
-DATA_ROOT="$VIGNOCR_RESOLVED_DATA_ROOT"
-vlog "stage 01 validate_data (root=$DATA_ROOT) -> $LOG"
 
-# Inline driver: integrity (fatal on failure) + stats (informational). The body
-# is a LITERAL heredoc ('PY' quoted) so the shell never touches it; the run dir
-# + data root arrive via argv. The package selects synthetic/real from
-# configs/data.yaml (override with VIGNOCR_DATA_ACTIVE — no code change).
+# Validate the EXACT datasets the training stages bind to — Stage B `real`
+# (data/) and Stage A `vignette` (data2/) — not just the global `active` selector.
+# Previously stage 01 validated whatever VIGNOCR_DATA_ACTIVE pointed at (default
+# `synthetic`), so it could green-light synthetic while 02/02a trained on the real
+# exports. Override the list for a synthetic-only smoke test:
+#   sbatch --export=ALL,VIGNOCR_VALIDATE_DATASETS="synthetic" slurm/01_validate_data.sbatch
+VALIDATE_DATASETS="${VIGNOCR_VALIDATE_DATASETS:-real vignette}"
+vlog "stage 01 validate_data (datasets='$VALIDATE_DATASETS') -> $LOG"
+
+# Inline driver: per-dataset stats (informational) + integrity (fatal). The body
+# is a LITERAL heredoc ('PY' quoted); run dir + the dataset NAME LIST arrive via
+# argv. Each name is resolved through the package's own get_dataset() so root,
+# splits, class_names, aliases and severity all match what training will use.
 set +e
-python - "$DATA_ROOT" "$VIGNOCR_RUN_DIR" 2>&1 <<'PY' | tee "$LOG"
+python - "$VIGNOCR_RUN_DIR" $VALIDATE_DATASETS 2>&1 <<'PY' | tee "$LOG"
 import json, sys
 from pathlib import Path
-root, run_dir = sys.argv[1], Path(sys.argv[2])
+run_dir = Path(sys.argv[1])
+names = sys.argv[2:] or ["synthetic"]
+from vignocr.common.config import get_dataset
 from vignocr.data.validate import check_integrity, IntegrityError
 from vignocr.data.stats import summarize
 
-# Stats first (never fatal) so we always emit a dataset profile.
-try:
-    summary = summarize(root)
-    (run_dir / "stats.json").write_text(json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("[stats] per-split:", summary.get("splits"))
-    print("[stats] per-class:", summary.get("per_class"))
-except Exception as exc:  # noqa: BLE001
-    print(f"[stats] WARN: {exc}")
+failures = []
+for name in names:
+    print(f"\n========== dataset: {name} ==========")
+    try:
+        ds = get_dataset(name)
+    except KeyError as exc:
+        print(f"[{name}] WARN: not declared in data.yaml: {exc}")
+        continue
+    root = ds["root"]
+    print(f"[{name}] root={root}")
+    # Stats first (never fatal) so we always emit a profile.
+    try:
+        summary = summarize(root)
+        (run_dir / f"stats.{name}.json").write_text(
+            json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[{name}][stats] per-split:", summary.get("splits"))
+        print(f"[{name}][stats] per-class:", summary.get("per_class"))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[{name}][stats] WARN: {exc}")
+    # Integrity gate (fatal): validate AGAINST this dataset's own block.
+    try:
+        report = check_integrity(root, dataset=ds)
+        (run_dir / f"integrity.{name}.json").write_text(
+            json.dumps(report.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[{name}][validate] integrity OK "
+              f"(warnings={len(report.warnings)})")
+    except IntegrityError as exc:
+        print(f"[{name}][validate] INTEGRITY FAILED:\n{exc}")
+        failures.append(name)
 
-# Integrity gate (fatal): raises IntegrityError on any violated invariant.
-report = check_integrity(root)
-print("[validate] report:", json.dumps(report.as_dict(), ensure_ascii=False, indent=2))
-(run_dir / "integrity.json").write_text(json.dumps(report.as_dict(), ensure_ascii=False, indent=2), encoding="utf-8")
-print("[validate] integrity OK")
+if failures:
+    print(f"\n[validate] FAILED datasets: {failures}")
+    sys.exit(1)
+print("\n[validate] all datasets OK")
 PY
 rc=${PIPESTATUS[0]}
 set -e

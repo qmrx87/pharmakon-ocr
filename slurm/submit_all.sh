@@ -68,7 +68,15 @@ vignocr_require_env
 # Resolve the storage tiers so the summary can show $VIGNOCR_RUNS_DIR. This is
 # cheap and login-node-safe (it only needs the repo root + makes scratch dirs).
 vignocr_paths
-vlog "account=$VIGNOCR_ACCOUNT  PI=$VIGNOCR_PI  ddp=$USE_DDP  test_only=$TEST_ONLY  from=$START_FROM"
+# The training DAG trains on the REAL exports (detection configs bind to
+# dataset: real / vignette). Default the global selector to `real` so the
+# validate stage + dataset symlink wiring agree with what training consumes.
+# Override for a synthetic smoke run: VIGNOCR_DATA_ACTIVE=synthetic bash submit_all.sh
+export VIGNOCR_DATA_ACTIVE="${VIGNOCR_DATA_ACTIVE:-real}"
+# Which datasets stage 01 integrity-checks (must cover every dataset training
+# binds to). Stage B=real (data/), Stage A=vignette (data2/).
+export VIGNOCR_VALIDATE_DATASETS="${VIGNOCR_VALIDATE_DATASETS:-real vignette}"
+vlog "account=$VIGNOCR_ACCOUNT  PI=$VIGNOCR_PI  ddp=$USE_DDP  test_only=$TEST_ONLY  from=$START_FROM  data_active=$VIGNOCR_DATA_ACTIVE"
 vlog "logs root: $VIGNOCR_LOGS_DIR  (per-stage/per-jobid)"
 
 # Pre-flight gate: detection training will fail offline if the COCO pretrained
@@ -190,7 +198,8 @@ submit_stage() {
   for v in VIGNOCR_ACCOUNT VIGNOCR_PI VIGNOCR_REPO_ROOT VIGNOCR_PROJECT_DIR \
            VIGNOCR_SCRATCH_DIR VIGNOCR_LOGS_DIR VIGNOCR_PRETRAINED_DIR \
            VIGNOCR_VENV_DIR VIGNOCR_RUNS_DIR VIGNOCR_SCRATCH VIGNOCR_DATA_ROOT \
-           VIGNOCR_DATA_ACTIVE VIGNOCR_DETECTION_CONFIG VIGNOCR_RESUME_RUN_DIR \
+           VIGNOCR_DATA_ACTIVE VIGNOCR_VALIDATE_DATASETS VIGNOCR_DETECTION_CONFIG \
+           VIGNOCR_RESUME_RUN_DIR \
            VIGNOCR_ALLOW_ONLINE_PRETRAIN VIGNOCR_OCR_DATASET_DIR; do
     [[ -n "${!v:-}" ]] && export_list="$export_list,$v=${!v}"
   done

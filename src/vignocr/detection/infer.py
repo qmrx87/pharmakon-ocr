@@ -68,6 +68,28 @@ def _is_onnx(path: Path) -> bool:
     return path.suffix.lower() == ".onnx"
 
 
+def _load_label_map(ckpt_path: Path) -> list[str] | None:
+    """Load the ordered id->name list persisted beside the checkpoint at train time.
+
+    Looks for ``class_names.json`` in the checkpoint's directory (and its parent,
+    in case the ckpt sits one level deeper than the run dir). Returns ``names``
+    (index == class_id) or ``None`` if absent/unreadable. Stdlib only — keeps this
+    module import-safe without the ``[ml]`` stack.
+    """
+    import json
+
+    for d in (ckpt_path.parent, ckpt_path.parent.parent):
+        f = d / "class_names.json"
+        if f.is_file():
+            try:
+                names = json.loads(f.read_text(encoding="utf-8")).get("names")
+                if isinstance(names, list) and names:
+                    return [str(n) for n in names]
+            except (OSError, ValueError):
+                continue
+    return None
+
+
 class Detector:
     """Loads an RF-DETR checkpoint or ONNX graph and detects vignette fields.
 
@@ -100,7 +122,22 @@ class Detector:
         # data.yaml/vignette; Stage B uses 17 from classes.yaml).
         _ds = resolve_dataset(self._cfg)
         _n, _names = resolve_class_schema(self._cfg, _ds)
-        self._schema = _DetectorSchemaView(_names, _n)
+        # AUTHORITATIVE label map: training persists `class_names.json` next to the
+        # checkpoint (id->name from the COCO RF-DETR actually trained on, aliases
+        # applied). It is the source of truth for class_id decoding — classes.yaml
+        # ordering does NOT match a reconciled/real COCO. Fall back to the config
+        # schema only when the sidecar is absent (e.g. an externally-trained ckpt).
+        _mapped = _load_label_map(self.path)
+        if _mapped:
+            self._schema = _DetectorSchemaView(_mapped, len(_mapped))
+            log.info("detector.label_map.loaded", n=len(_mapped), source="class_names.json")
+        else:
+            self._schema = _DetectorSchemaView(_names, _n)
+            log.warning(
+                "detector.label_map.fallback",
+                note="no class_names.json beside checkpoint; decoding ids via config "
+                "schema — verify this matches the model's training categories.",
+            )
         self.resolution: int = int(self._cfg.get("model", {}).get("resolution", 640))
         eval_cfg = self._cfg.get("eval", {})
         self.score_threshold: float = (

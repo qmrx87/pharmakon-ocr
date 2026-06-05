@@ -65,7 +65,19 @@ ml = [
   "filelock",
   "fsspec",
   "typing_extensions",
-  "rfdetr>=1.1",
+  # RF-DETR with its TRAINING extra. RF-DETR migrated training to PyTorch
+  # Lightning (roboflow/rf-detr#709) and now LAZY-imports the training stack
+  # inside `model.train()` (`from rfdetr.training import ...` -> pytorch_lightning).
+  # A bare `rfdetr` install imports fine and even constructs the model, then
+  # crashes the FIRST time training runs — past every import-time check. The
+  # `[train,loggers]` extra pulls pytorch_lightning + albumentations + the TB/W&B
+  # loggers. Same lazy-skip risk as torch above, so we ALSO pin the lightning
+  # stack explicitly below (wheelhouse `--no-index` installs skip extras the
+  # parent doesn't hard-declare).
+  "rfdetr[train,loggers]>=1.1",
+  "pytorch_lightning",
+  "torchmetrics",
+  "lightning-utilities",
   "onnx>=1.17",
   "onnxruntime>=1.20",
   "pycocotools>=2.0.6",

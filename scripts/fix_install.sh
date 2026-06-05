@@ -44,12 +44,23 @@ python -m pip install --no-index --upgrade \
     sympy networkx jinja2 filelock fsspec typing_extensions \
   || vdie "could not install torch lazy deps from the wheelhouse. Run 'avail_wheels sympy' to confirm availability."
 
-# 3. Verify the full ML import chain — the exact path that crashed at training.
-vlog "verifying ML import chain (rfdetr → torchvision → torch._dynamo → sympy)"
+# 2b. Install the RF-DETR TRAINING stack (lazy-imported inside model.train()).
+#     This is the module that crashed the latest runs: "No module named
+#     'pytorch_lightning'". `import rfdetr` succeeds without it, so it must be
+#     installed + verified explicitly.
+vlog "installing RF-DETR training stack (pytorch_lightning/torchmetrics/lightning-utilities)"
+python -m pip install --no-index --upgrade \
+    pytorch_lightning torchmetrics lightning_utilities \
+  || vdie "could not install the Lightning training stack from the wheelhouse. Run 'avail_wheels pytorch_lightning torchmetrics lightning_utilities'."
+
+# 3. Verify the full ML import chain — the exact path that crashed at training,
+#    INCLUDING the lazily-imported training submodule rfdetr.training.
+vlog "verifying ML import chain (incl. rfdetr.training → pytorch_lightning)"
 python - <<'PY' || vdie "ML import chain still broken — see traceback above. Install the missing module(s) with: pip install --no-index <module>"
 import importlib, sys
 chain = ["sympy", "networkx", "jinja2", "filelock", "fsspec",
-         "torch", "torch._dynamo", "torchvision", "torchvision.ops", "rfdetr"]
+         "torch", "torch._dynamo", "torchvision", "torchvision.ops",
+         "rfdetr", "pytorch_lightning", "torchmetrics", "rfdetr.training"]
 fail = []
 for m in chain:
     try:

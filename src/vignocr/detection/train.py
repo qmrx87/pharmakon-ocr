@@ -167,6 +167,55 @@ def _snapshot_run(cfg_path: str, cfg: dict[str, Any], run_dir: Path, ckpt_dir: P
     log.info("train.snapshot", run_dir=str(run_dir), git_sha=meta["git_sha"])
 
 
+def _persist_label_map(ds: dict[str, Any], *dirs: Path) -> list[str] | None:
+    """Persist the detector's class_id -> name map from the dataset's COCO file.
+
+    WHY THIS EXISTS (correctness landmine):
+        RF-DETR trains DIRECTLY on the raw COCO file (we hand it ``dataset_dir``),
+        so its predicted ``class_id`` is an index into that file's ``categories``
+        (ordered by id) — NOT into ``configs/classes.yaml``. For the reconciled
+        real export the two do NOT agree (the COCO has ``drug-labels``/``text`` and
+        names like ``lot``/``tarif_ref``; classes.yaml has 17 names in a different
+        order). Inference that decodes ids via classes.yaml would therefore assign
+        the WRONG field name to every box. We persist the authoritative ordered
+        name list (with ``data.yaml: coco_aliases`` applied so downstream sees the
+        schema names ``num_lot``/``tr``) next to the checkpoint; ``infer.Detector``
+        loads it and can never silently scramble labels.
+
+    Best-effort: provenance must never crash a training run.
+    """
+    try:
+        root = Path(ds["root"])
+        splits = ds.get("splits", {}) or {}
+        coco_name = ds.get("coco_filename", "_annotations.coco.json")
+        coco_path = root / splits.get("train", "train") / coco_name
+        if not coco_path.is_file():
+            log.warning("train.label_map_no_coco", path=str(coco_path))
+            return None
+        data = json.loads(coco_path.read_text(encoding="utf-8"))
+        cats = sorted(data.get("categories", []), key=lambda c: int(c["id"]))
+        aliases = ds.get("coco_aliases", {}) or {}
+        # index == RF-DETR contiguous class_id (COCO categories sorted by id).
+        names = [aliases.get(c["name"], c["name"]) for c in cats]
+        payload = {
+            "source": str(coco_path),
+            "dataset": ds.get("name"),
+            "names": names,
+            "raw_categories": [{"id": int(c["id"]), "name": c["name"]} for c in cats],
+            "aliases_applied": aliases,
+            "note": "names[i] is the class for RF-DETR class_id==i (COCO ids sorted asc).",
+        }
+        for d in dirs:
+            (Path(d) / "class_names.json").write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
+            )
+        log.info("train.label_map", n=len(names), names=names)
+        return names
+    except Exception as exc:  # noqa: BLE001 - provenance must never crash a run
+        log.warning("train.label_map_failed", err=str(exc))
+        return None
+
+
 def _coco_dataset_dir(ds: dict[str, Any]) -> Path:
     """RF-DETR consumes a Roboflow COCO directory (train/ valid/ test/).
 
@@ -264,6 +313,10 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     ds = resolve_dataset(cfg)
     num_classes, class_names = resolve_class_schema(cfg, ds)
     dataset_dir = _coco_dataset_dir(ds)
+    # Persist the authoritative id->name map (from the COCO RF-DETR actually
+    # trains on) next to the checkpoint AND in the run dir, so inference decodes
+    # class ids correctly instead of assuming classes.yaml ordering.
+    _persist_label_map(ds, ckpt_dir, run_dir)
     tcfg = cfg.get("train", {})
     mcfg = cfg.get("model", {})
 
@@ -334,22 +387,30 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     )
 
     early = tcfg.get("early_stop", {})
-    # TODO(rfdetr-api): rfdetr==1.1.0 exposes Model.train(dataset_dir=..., epochs=...,
-    # batch_size=..., grad_accum_steps=..., lr=..., lr_encoder/lr_backbone=...,
-    # output_dir=..., resume=..., early_stopping=..., tensorboard=...). Argument
-    # names below follow that documented surface; if the installed build differs,
-    # adapt the kwargs here (the rest of this function — seeding, snapshot, scratch
-    # checkpoints, parity with classes.yaml — is API-independent).
+    # rfdetr's REAL train() surface (verified against rfdetr 1.x docs,
+    # rfdetr.roboflow.com/.../training-parameters):
+    #   dataset_dir, output_dir, epochs, batch_size, grad_accum_steps, resume,
+    #   lr, lr_encoder (NOT lr_backbone), weight_decay, seed, tensorboard,
+    #   early_stopping{,_patience,_min_delta,_use_ema}, ...
+    # Two names from our config DON'T exist on rfdetr's API and previously got
+    # passed through verbatim:
+    #   * lr_backbone  -> rfdetr calls the backbone/encoder LR `lr_encoder`.
+    #   * clip_max_norm / num_workers -> not part of rfdetr's train() surface.
+    # We MAP lr_backbone onto lr_encoder and DROP the two unknowns so we don't
+    # gamble on the signature-filter below catching them (it only fires when
+    # train() uses explicit params; if rfdetr uses **kwargs + a strict pydantic
+    # TrainConfig, an unknown kwarg raises a ValidationError our TypeError guard
+    # would NOT catch). clip_max_norm/num_workers stay readable in the config for
+    # provenance; they're simply not forwarded.
     train_kwargs: dict[str, Any] = {
         "dataset_dir": str(dataset_dir),
         "epochs": int(tcfg.get("epochs", 50)),
         "batch_size": int(tcfg.get("batch_size", 4)),
         "grad_accum_steps": int(tcfg.get("grad_accum_steps", 1)),
         "lr": float(tcfg.get("lr", 1e-4)),
-        "lr_backbone": float(tcfg.get("lr_backbone", 1e-5)),
+        # config key stays `lr_backbone` (human-meaningful); rfdetr kwarg is lr_encoder.
+        "lr_encoder": float(tcfg.get("lr_backbone", tcfg.get("lr_encoder", 1.5e-4))),
         "weight_decay": float(tcfg.get("weight_decay", 1e-4)),
-        "clip_max_norm": float(tcfg.get("clip_max_norm", 0.1)),
-        "num_workers": int(tcfg.get("num_workers", 2)),
         "output_dir": str(ckpt_dir),
         "resume": str(resume) if resume else None,
         "early_stopping": bool(early.get("enabled", False)),

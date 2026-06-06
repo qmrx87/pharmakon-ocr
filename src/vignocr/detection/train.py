@@ -402,9 +402,13 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     # TrainConfig, an unknown kwarg raises a ValidationError our TypeError guard
     # would NOT catch). clip_max_norm/num_workers stay readable in the config for
     # provenance; they're simply not forwarded.
+    # VIGNOCR_MAX_EPOCHS caps epochs for a fast smoke test (e.g. =1) WITHOUT
+    # editing the config — exercises the real train path (kwargs, label-map
+    # persistence, checkpointing) in a few minutes. Unset => use the config value.
+    _epochs = int(os.environ.get("VIGNOCR_MAX_EPOCHS") or tcfg.get("epochs", 50))
     train_kwargs: dict[str, Any] = {
         "dataset_dir": str(dataset_dir),
-        "epochs": int(tcfg.get("epochs", 50)),
+        "epochs": _epochs,
         "batch_size": int(tcfg.get("batch_size", 4)),
         "grad_accum_steps": int(tcfg.get("grad_accum_steps", 1)),
         "lr": float(tcfg.get("lr", 1e-4)),

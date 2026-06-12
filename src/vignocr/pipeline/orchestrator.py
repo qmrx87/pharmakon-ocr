@@ -99,7 +99,15 @@ class VignocrPipeline:
         self.vignette_cfg_path: str = self.cfg.get(
             "vignette_cfg_path", "detection/rfdetr_vignette"
         )
-        self.vignette_class: str = self.cfg.get("vignette_class", "entete")
+        # Crop target for Stage A. In the data2 annotation `vin` is the WIDE
+        # vignette body (~39% of the photo) and `entete` is the narrow vertical
+        # strip INSIDE it holding num_lot/date_fab/date_exp (~7%). The previous
+        # default ("entete") cropped to the strip — discarding every other field
+        # before Stage B ever ran. Stage B must see the whole vignette: `vin`.
+        self.vignette_class: str = self.cfg.get("vignette_class", "vin")
+        # Relative margin added around the Stage A crop so a slightly-tight box
+        # never clips edge fields (fraction of box size per side).
+        self.vignette_crop_margin: float = float(self.cfg.get("vignette_crop_margin", 0.04))
         self.default_flow: Flow = self.cfg.get("default_flow", "selling")
         self._preprocess_cfg: dict[str, Any] = self.cfg.get("preprocess", {}) or {}
         self._root: str = self._resolve_root()
@@ -349,8 +357,10 @@ class VignocrPipeline:
 
         Pass-through when no Stage A model is configured (the synthetic test
         path). When configured, lazy-loads a ``Detector`` bound to the vignette
-        config, picks the highest-scoring ``vignette_class`` (default ``entete``)
-        detection, and returns the cropped PIL image. If no qualifying box is
+        config, picks the highest-scoring ``vignette_class`` (default ``vin`` —
+        the whole vignette body in the data2 annotation; ``entete`` is only the
+        lot/dates strip inside it), expands the box by ``vignette_crop_margin``
+        per side, and returns the cropped PIL image. If no qualifying box is
         found, falls back to the original image and logs.
         """
         if not self.vignette_detector_path:
@@ -387,10 +397,14 @@ class VignocrPipeline:
             )
             return pil
         best = max(targets, key=lambda d: d.score)
-        x0 = max(0, int(round(best.bbox.x)))
-        y0 = max(0, int(round(best.bbox.y)))
-        x1 = min(pil.width, int(round(best.bbox.x + best.bbox.w)))
-        y1 = min(pil.height, int(round(best.bbox.y + best.bbox.h)))
+        # Expand the box by the configured margin so a tight detection never
+        # clips fields sitting on the vignette border (clamped to the image).
+        mx = best.bbox.w * self.vignette_crop_margin
+        my = best.bbox.h * self.vignette_crop_margin
+        x0 = max(0, int(round(best.bbox.x - mx)))
+        y0 = max(0, int(round(best.bbox.y - my)))
+        x1 = min(pil.width, int(round(best.bbox.x + best.bbox.w + mx)))
+        y1 = min(pil.height, int(round(best.bbox.y + best.bbox.h + my)))
         if x1 <= x0 or y1 <= y0:
             return pil
         log.info(

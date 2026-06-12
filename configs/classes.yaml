@@ -50,8 +50,13 @@ roles:
   dispensing_critical: [dci, dosage, forme]                 # conflict => flag, never silently overwrite
   never_correct:       [ppa, tr]                            # vignette-specific; nomenclature NEVER overwrites
   reimbursability_region: color_band
-  body_region:         entete
-  rotated_strip:       vin
+  # Region semantics per the REAL data2 annotation (verified 2026-06):
+  #   vin    = the WIDE vignette body  (Stage A crop target)
+  #   entete = the narrow VERTICAL lot/dates strip inside the vignette
+  # (The synthetic fixture predates this and treats entete as the body — these
+  # roles describe the REAL data; nothing in src/ consumes them yet.)
+  body_region:         vin
+  rotated_strip:       entete
 
 # Detector eval MUST report localization recall on these (the business rule depends on them).
 business_critical_fields: [ppa, prix, shp, num_enregistrement, num_lot]

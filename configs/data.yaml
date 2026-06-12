@@ -42,10 +42,13 @@ datasets:
 
   # ---- Stage A: vignette-region detector (find the vignette inside a wider drug-box photo) ----
   # The Algeria-Drug-label vignette dataset (Roboflow, exported 2026-06-03): 750
-  # images annotated with `entete` (whole vignette body, 551 train anns) + `vin`
-  # (rotated left strip, 552) + `date_info`. Stage A trains a small RF-DETR on
-  # these three classes; the pipeline uses ONLY the `entete` box at inference to
-  # crop the vignette out and feed it to Stage B.
+  # images annotated with `vin` (the WIDE vignette body, ~39% of the photo, 552
+  # train anns) + `entete` (the narrow VERTICAL strip inside it holding
+  # num_lot/date_fab/date_exp, ~7%, 551) + `date_info` (declared, 0 anns).
+  # VERIFIED against the COCO geometry 2026-06 (vin ≈ 335x222, entete ≈ 60x204
+  # inside vin) — an earlier version of this comment had the two swapped.
+  # At inference the pipeline crops the `vin` box (whole vignette) for Stage B;
+  # the `entete` strip is the direct ROI for the lot/dates fields (used by v2).
   vignette:
     root: data2                                # pharmakon-ocr/data2/
     coco_filename: _annotations.coco.json

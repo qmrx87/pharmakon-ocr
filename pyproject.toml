@@ -83,8 +83,14 @@ ml = [
   "pycocotools>=2.0.6",
   "albumentations>=1.4",
   "opencv-python-headless>=4.10",
-  "paddleocr>=2.9",
-  "paddlepaddle>=2.6",
+  # Pinned <3: vignocr's OCR code (ocr/infer.py, ocr/autolabel.py) uses the
+  # PaddleOCR 2.x API (PaddleOCR(det=, use_angle_cls=, use_gpu=, show_log=) and
+  # .ocr(det=False, cls=...)). PaddleOCR 3.x renamed/removed all of these
+  # (predict(), use_textline_orientation, device=) — letting 3.x in would crash
+  # Stage C at runtime on an offline node. Lift the pin only together with an
+  # API migration of both modules.
+  "paddleocr>=2.9,<3",
+  "paddlepaddle>=2.6,<3",
 ]
 dev = [
   "pytest==8.3.4",

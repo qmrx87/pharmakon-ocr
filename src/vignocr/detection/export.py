@@ -51,12 +51,18 @@ _ML_HINT = (
 )
 
 
-def to_onnx(ckpt: Path | str, out: Path | str) -> Path:
+def to_onnx(
+    ckpt: Path | str, out: Path | str, cfg_path: str = "detection/rfdetr_medium"
+) -> Path:
     """Export ``ckpt`` to ONNX at ``out`` and verify torch<->onnxruntime parity.
 
     Args:
         ckpt: RF-DETR ``.pth``/``.pt`` checkpoint to export.
         out: destination ``.onnx`` path (parent dirs are created).
+        cfg_path: the detection config the checkpoint was TRAINED with (Stage A
+            checkpoints need ``detection/rfdetr_vignette``). Determines the
+            model variant, resolution, and class schema — previously hardcoded
+            to the Stage B config, which mis-sized a Stage A 3-class head as 17.
 
     Returns:
         The path to the written ``.onnx`` file.
@@ -72,8 +78,7 @@ def to_onnx(ckpt: Path | str, out: Path | str) -> Path:
     if not ckpt.exists():
         raise FileNotFoundError(f"checkpoint not found: {ckpt}")
 
-    cfg = load_config("detection/rfdetr_medium")
-    schema = get_classes()
+    cfg = load_config(cfg_path)
     mcfg = cfg.get("model", {})
     ecfg = cfg.get("export", {})
     resolution = int(mcfg.get("resolution", 640))
@@ -85,13 +90,25 @@ def to_onnx(ckpt: Path | str, out: Path | str) -> Path:
         # rfdetr requires torch transitively, so this single import fails fast
         # (with the [ml] hint) when the extra is absent. The helpers below import
         # torch directly where they use it.
-        from rfdetr import RFDETRMedium
+        from vignocr.detection._resolve import resolve_model_class
+
+        model_cls = resolve_model_class(cfg)
     except ImportError as exc:  # pragma: no cover - env-dependent
         raise ImportError(_ML_HINT) from exc
 
-    num_classes = schema.num_classes
+    # Head width: the class_names.json the trainer persisted BESIDE the ckpt is
+    # authoritative (it reflects the COCO the model actually trained on). Fall
+    # back to the config-resolved schema, then classes.yaml.
+    num_classes = _ckpt_num_classes(ckpt)
+    if num_classes is None:
+        from vignocr.detection._resolve import resolve_class_schema, resolve_dataset
+
+        try:
+            num_classes, _ = resolve_class_schema(cfg, resolve_dataset(cfg))
+        except Exception:  # noqa: BLE001 - config best-effort
+            num_classes = get_classes().num_classes
     log.info("export.start", ckpt=str(ckpt), out=str(out), num_classes=num_classes, opset=opset)
-    model = RFDETRMedium(
+    model = model_cls(
         pretrain_weights=str(ckpt),
         num_classes=num_classes,
         resolution=resolution,
@@ -110,6 +127,26 @@ def to_onnx(ckpt: Path | str, out: Path | str) -> Path:
     _parity_check(model, out, resolution, atol, rtol)
     log.info("export.parity_ok", atol=atol, rtol=rtol)
     return out
+
+
+def _ckpt_num_classes(ckpt: Path) -> int | None:
+    """Head width from the ``class_names.json`` persisted beside the checkpoint.
+
+    The trainer writes the authoritative id->name list next to every checkpoint
+    (see ``train._persist_label_map``). Returns ``None`` when absent/unreadable.
+    """
+    import json
+
+    for d in (ckpt.parent, ckpt.parent.parent):
+        f = d / "class_names.json"
+        if f.is_file():
+            try:
+                names = json.loads(f.read_text(encoding="utf-8")).get("names")
+                if isinstance(names, list) and names:
+                    return len(names)
+            except (OSError, ValueError):
+                continue
+    return None
 
 
 # --------------------------------------------------------------------------- #

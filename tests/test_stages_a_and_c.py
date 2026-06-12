@@ -26,7 +26,6 @@ import pytest
 from vignocr.common import get_dataset, load_config
 from vignocr.detection._resolve import resolve_class_schema, resolve_dataset
 
-
 # --------------------------------------------------------------------------- #
 # Stage A / Stage B detector-config binding
 # --------------------------------------------------------------------------- #
@@ -177,4 +176,8 @@ def test_pipeline_pre_crop_off_by_default() -> None:
     # The defaults still point at the Stage A config so a serving deployment
     # only needs to set vignette_detector_path to enable the stage.
     assert p.vignette_cfg_path == "detection/rfdetr_vignette"
-    assert p.vignette_class == "entete"
+    # Crop target is `vin` — the WIDE vignette body in the data2 annotation.
+    # (`entete` is the narrow lot/dates strip INSIDE the vignette; cropping to
+    # it would discard every other field before Stage B — the bug this guards.)
+    assert p.vignette_class == "vin"
+    assert p.vignette_crop_margin == pytest.approx(0.04)

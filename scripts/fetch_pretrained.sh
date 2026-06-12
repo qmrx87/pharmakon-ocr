@@ -54,7 +54,12 @@ fi
 OUT_DIR="$VIGNOCR_PRETRAINED_DIR"
 mkdir -p "$OUT_DIR"
 
-RFDETR_OUT="$OUT_DIR/rfdetr_medium_coco.pth"
+# Which RF-DETR size to fetch (medium = v1 default; v2 may use nano/small).
+#   VIGNOCR_RFDETR_SIZE=nano bash scripts/fetch_pretrained.sh
+# The trainer resolves the cache per-variant (rfdetr_<size>_coco.pth), so fetch
+# once per size you train.
+RFDETR_SIZE="${VIGNOCR_RFDETR_SIZE:-medium}"
+RFDETR_OUT="$OUT_DIR/rfdetr_${RFDETR_SIZE}_coco.pth"
 
 # Pre-flight: ask the installed rfdetr what its HOSTED_MODELS map says, so we
 # discover the canonical URL straight from the package instead of guessing.
@@ -106,8 +111,8 @@ fi
 #      (`rf-detr-medium.pth`, NOT `rf-detr-medium-coco.pth` — that's a 404).
 #      Override with $VIGNOCR_PRETRAINED_RFDETR_URL if Roboflow renames it.
 # ---------------------------------------------------------------------------
-RFDETR_URL="${VIGNOCR_PRETRAINED_RFDETR_URL:-https://storage.googleapis.com/rfdetr/rf-detr-medium.pth}"
-RFDETR_MAGIC_NAME="${VIGNOCR_PRETRAINED_RFDETR_MAGIC:-rf-detr-medium.pth}"
+RFDETR_URL="${VIGNOCR_PRETRAINED_RFDETR_URL:-https://storage.googleapis.com/rfdetr/rf-detr-${RFDETR_SIZE}.pth}"
+RFDETR_MAGIC_NAME="${VIGNOCR_PRETRAINED_RFDETR_MAGIC:-rf-detr-${RFDETR_SIZE}.pth}"
 
 # rfdetr's CANONICAL cache location (discovered the hard way: rfdetr 1.x
 # downloads its hosted models into ~/.roboflow/models/<name>.pth, NOT into
@@ -151,7 +156,7 @@ else
   #       fine-tune (which is what Stage A/B do) only the model weights matter.
   if python -c "import rfdetr" 2>/dev/null; then
     vlog "trying rfdetr programmatic download (3 inner strategies)"
-    if VIGNOCR_PRETRAINED_OUT="$RFDETR_OUT" VIGNOCR_RFDETR_MAGIC="$RFDETR_MAGIC_NAME" python - <<'PY'
+    if VIGNOCR_PRETRAINED_OUT="$RFDETR_OUT" VIGNOCR_RFDETR_MAGIC="$RFDETR_MAGIC_NAME" VIGNOCR_RFDETR_SIZE="$RFDETR_SIZE" python - <<'PY'
 import os, shutil, sys, traceback
 from pathlib import Path
 
@@ -244,14 +249,23 @@ def _save_state_dict(model_obj, out_path):
     return out_path
 
 
-from rfdetr import RFDETRMedium
+import rfdetr
+
+# Pick the wrapper class for the requested size (medium = v1 default).
+_size = os.environ.get("VIGNOCR_RFDETR_SIZE", "medium").lower()
+_cls_name = {"nano": "RFDETRNano", "small": "RFDETRSmall", "medium": "RFDETRMedium",
+             "base": "RFDETRBase", "large": "RFDETRLarge"}.get(_size, "RFDETRMedium")
+ModelCls = getattr(rfdetr, _cls_name, None)
+if ModelCls is None:
+    print(f"  installed rfdetr does not export {_cls_name}; falling back to RFDETRMedium")
+    from rfdetr import RFDETRMedium as ModelCls
 
 errors = []
 
 # A1: explicit magic-string download
 try:
-    print(f"  [A1] RFDETRMedium(pretrain_weights={magic!r})")
-    m = RFDETRMedium(pretrain_weights=magic)
+    print(f"  [A1] {ModelCls.__name__}(pretrain_weights={magic!r})")
+    m = ModelCls(pretrain_weights=magic)
     cand = _find_cached(magic)
     if cand:
         shutil.copy2(cand, out)
@@ -264,8 +278,8 @@ except Exception as e:
 
 # A2: no-arg construction (rfdetr default pretrained behaviour)
 try:
-    print("  [A2] RFDETRMedium()  # no args → default pretrained download")
-    m = RFDETRMedium()
+    print(f"  [A2] {ModelCls.__name__}()  # no args → default pretrained download")
+    m = ModelCls()
     cand = _find_cached(magic)
     if cand:
         shutil.copy2(cand, out)
@@ -282,7 +296,7 @@ except Exception as e:
 try:
     print("  [A3] torch.save(model.state_dict(), out)  # guaranteed-success path")
     if "m" not in locals() or m is None:
-        m = RFDETRMedium(pretrain_weights=None)
+        m = ModelCls(pretrain_weights=None)
     _save_state_dict(m, out)
     print(f"  [A3] OK: wrote {out} ({out.stat().st_size} bytes)")
     sys.exit(0)

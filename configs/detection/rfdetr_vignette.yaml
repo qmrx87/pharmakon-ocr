@@ -3,11 +3,17 @@
 #
 # Finds the vignette REGION inside a wider drug-box photo so Stage B (the field
 # detector) sees a clean vignette crop. Trained on data2/ (Algeria-Drug-label
-# vignette dataset, 750 images / 416×416 / classes = entete + vin + date_info).
+# vignette dataset, 750 images / 416×416 / classes = date_info + entete + vin).
+#
+# CLASS SEMANTICS (verified against the COCO geometry 2026-06):
+#   vin    = the WIDE vignette body (~39% of the photo)  -> Stage A crop target
+#   entete = the narrow VERTICAL strip inside the vignette holding
+#            num_lot / date_fab / date_exp (~7%)         -> v2 strip ROI
+#   date_info = declared in the export but carries 0 annotations.
 #
 # Schema for Stage A lives in `data.yaml: datasets.vignette.class_names` — it is
 # INDEPENDENT of classes.yaml (which is the Stage B field schema). At inference
-# the pipeline uses ONLY the `entete` detection to crop the vignette.
+# the pipeline crops the `vin` detection (whole vignette) for Stage B.
 #
 # A smaller, single-A100 budget than Stage B: 3 classes, larger boxes, easier
 # task. Drops batch + epochs accordingly.

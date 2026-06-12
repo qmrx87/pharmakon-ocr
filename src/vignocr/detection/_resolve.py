@@ -49,3 +49,41 @@ def resolve_class_schema(
 
     schema = get_classes()
     return schema.num_classes, list(schema.names)
+
+
+# cfg.model.name -> rfdetr wrapper class name. Until 2026-06 the `name` knob was
+# silently IGNORED (train/infer/export all hardcoded RFDETRMedium), so a config
+# could claim `rfdetr_nano` and still train a medium. Resolved lazily so this
+# module stays importable without the [ml] extra.
+_RFDETR_VARIANTS: dict[str, str] = {
+    "rfdetr_nano": "RFDETRNano",
+    "rfdetr_small": "RFDETRSmall",
+    "rfdetr_medium": "RFDETRMedium",
+    "rfdetr_base": "RFDETRBase",
+    "rfdetr_large": "RFDETRLarge",
+}
+
+
+def resolve_model_class(cfg: dict[str, Any]) -> Any:
+    """Return the rfdetr model class for ``cfg.model.name`` (lazy ML import).
+
+    Falls back to ``RFDETRMedium`` with a clear error if the installed rfdetr
+    build lacks the requested variant (older wheels ship fewer sizes).
+    """
+    name = str((cfg.get("model") or {}).get("name", "rfdetr_medium")).lower()
+    cls_name = _RFDETR_VARIANTS.get(name)
+    if cls_name is None:
+        raise ValueError(
+            f"unknown detection model name {name!r} in config; "
+            f"expected one of {sorted(_RFDETR_VARIANTS)}"
+        )
+    import rfdetr  # noqa: PLC0415 - lazy: keeps the core CPU-importable
+
+    cls = getattr(rfdetr, cls_name, None)
+    if cls is None:
+        raise ImportError(
+            f"config requests model {name!r} but the installed rfdetr "
+            f"({getattr(rfdetr, '__version__', '?')}) does not export {cls_name}. "
+            "Upgrade rfdetr or pick a variant the installed build ships."
+        )
+    return cls

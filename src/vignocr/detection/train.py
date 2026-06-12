@@ -232,17 +232,33 @@ def _coco_dataset_dir(ds: dict[str, Any]) -> Path:
     return root
 
 
+def _pretrained_candidate_names(cfg: dict[str, Any]) -> tuple[list[str], list[str]]:
+    """Cache filenames to probe for this config's model variant.
+
+    Returns ``(our_cache_names, roboflow_cache_names)``. Derived from
+    ``cfg.model.name`` (``rfdetr_nano`` -> size token ``nano``) so a nano/small
+    config never silently picks up the MEDIUM checkpoint (mismatched weights
+    would partially load and quietly re-init the rest).
+    """
+    name = str((cfg.get("model") or {}).get("name", "rfdetr_medium")).lower()
+    size = name.removeprefix("rfdetr_") or "medium"
+    ours = [f"rfdetr_{size}_coco.pth", f"rf-detr-{size}-coco.pth", f"rf-detr-{size}.pth"]
+    theirs = [f"rf-detr-{size}.pth", f"rf-detr-{size}-coco.pth"]
+    return ours, theirs
+
+
 def _resolve_pretrained_weights(cfg: dict[str, Any]) -> str | None:
     """Return a local file path to RF-DETR's COCO-pretrained backbone, or None.
 
-    Resolution order:
+    Resolution order (names are VARIANT-AWARE via cfg.model.name — see
+    :func:`_pretrained_candidate_names`):
         1. cfg.model.pretrain_weights (explicit)               -> use as-is
         2. env VIGNOCR_PRETRAINED_RFDETR (explicit)            -> use as-is
-        3. $VIGNOCR_PRETRAINED_DIR/rfdetr_medium_coco.pth      -> use if exists
-        4. ~/.roboflow/models/rf-detr-medium.pth               -> use if exists
+        3. $VIGNOCR_PRETRAINED_DIR/rfdetr_<size>_coco.pth      -> use if exists
+        4. ~/.roboflow/models/rf-detr-<size>.pth               -> use if exists
            (rfdetr 1.x caches its hosted models here; if the user ever called
-           RFDETRMedium() on the login node, the file is already there)
-        5. $ROBOFLOW_MODELS_DIR/rf-detr-medium.pth             -> use if exists
+           the model class on the login node, the file is already there)
+        5. $ROBOFLOW_MODELS_DIR/rf-detr-<size>.pth             -> use if exists
         6. None  (rfdetr will then try the Hub — only OK on login node)
 
     Cases (1)-(5) are CACHE HITS — the function returns a path to a real file.
@@ -264,20 +280,21 @@ def _resolve_pretrained_weights(cfg: dict[str, Any]) -> str | None:
             return str(p)
         log.warning("train.pretrained.env_missing", env=str(p))
 
+    our_names, their_names = _pretrained_candidate_names(cfg)
+
     cache_dir = os.environ.get("VIGNOCR_PRETRAINED_DIR")
     if cache_dir:
-        for name in ("rfdetr_medium_coco.pth", "rf-detr-medium-coco.pth",
-                     "rf-detr-medium.pth"):
+        for name in our_names:
             p = Path(cache_dir) / name
             if p.is_file():
                 return str(p)
 
     # rfdetr 1.x's CANONICAL cache dir — `~/.roboflow/models/`. The library
-    # writes here on first construction (RFDETRMedium auto-downloads to this
+    # writes here on first construction (the model class auto-downloads to this
     # path). Override the prefix with $ROBOFLOW_MODELS_DIR.
     roboflow_dir = Path(os.environ.get("ROBOFLOW_MODELS_DIR",
                                        str(Path.home() / ".roboflow" / "models")))
-    for name in ("rf-detr-medium.pth", "rf-detr-medium-coco.pth"):
+    for name in their_names:
         p = roboflow_dir / name
         if p.is_file():
             return str(p)
@@ -322,9 +339,13 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
 
     # 2) Lazy ML imports (kept here so the module imports on CPU without [ml]).
     #    rfdetr requires torch transitively, so this import fails fast (with the
-    #    [ml] hint) when the extra is absent.
+    #    [ml] hint) when the extra is absent. The model CLASS comes from
+    #    cfg.model.name (rfdetr_nano/small/medium/...) — previously hardcoded to
+    #    RFDETRMedium, which silently ignored the config knob.
     try:
-        from rfdetr import RFDETRMedium
+        from vignocr.detection._resolve import resolve_model_class
+
+        model_cls = resolve_model_class(cfg)
     except ImportError as exc:  # pragma: no cover - env-dependent
         raise ImportError(_ML_HINT) from exc
 
@@ -380,7 +401,7 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
         init_source=init_source,
         pretrain_weights=pretrain_weights,
     )
-    model = RFDETRMedium(
+    model = model_cls(
         num_classes=num_classes,
         resolution=resolution,
         pretrain_weights=pretrain_weights,

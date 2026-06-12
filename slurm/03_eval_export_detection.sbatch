@@ -79,22 +79,25 @@ vlog "running detection eval -> $METRICS_JSON ; ONNX export -> $ONNX_OUT (parity
 # Use the PACKAGE-resolved root so eval reads the same data training did.
 # `set +e` around the tee'd pipeline to capture PIPESTATUS for our own error.
 set +e
-python - "$CKPT" "$VIGNOCR_RESOLVED_DATA_ROOT" "$EVAL_SPLIT" "$METRICS_JSON" "$ONNX_OUT" 2>&1 \
+python - "$CKPT" "$VIGNOCR_RESOLVED_DATA_ROOT" "$EVAL_SPLIT" "$METRICS_JSON" "$ONNX_OUT" "$DET_CONFIG" 2>&1 \
   <<'PY' | tee "$VIGNOCR_RUN_DIR/eval_export_detection.log"
 import json, sys
 from pathlib import Path
-ckpt, root, split, metrics_out, onnx_out = sys.argv[1:6]
+ckpt, root, split, metrics_out, onnx_out, det_cfg = sys.argv[1:7]
 from vignocr.detection.eval import run as eval_run
 from vignocr.detection.export import to_onnx
 
-metrics = eval_run(ckpt, root, split=split)
+# Thread the SAME detection config through eval AND export so a Stage A
+# (3-class vignette) checkpoint is evaluated/exported with its own schema —
+# previously both defaulted to the Stage B config and mis-sized the head.
+metrics = eval_run(ckpt, root, split=split, cfg_path=det_cfg)
 Path(metrics_out).write_text(json.dumps(metrics, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 loc = metrics.get("localization_recall", {})
 print(f"[eval] map={metrics.get('map')} map_50={metrics.get('map_50')} "
       f"loc_recall={loc.get('recall')} missing={loc.get('missing')}")
 
 # Export + parity check (to_onnx RAISES on parity mismatch -> non-zero exit).
-out = to_onnx(ckpt, onnx_out)
+out = to_onnx(ckpt, onnx_out, cfg_path=det_cfg)
 print(f"[export] ONNX written + parity OK: {out}")
 PY
 rc=${PIPESTATUS[0]}

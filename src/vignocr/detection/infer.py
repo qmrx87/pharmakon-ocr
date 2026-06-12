@@ -174,16 +174,19 @@ class Detector:
             return
         try:
             import torch  # noqa: F401  (lazy; ensures clear error if missing)
-            from rfdetr import RFDETRMedium
+
+            from vignocr.detection._resolve import resolve_model_class
+
+            model_cls = resolve_model_class(self._cfg)
         except ImportError as exc:  # pragma: no cover - env-dependent
             raise ImportError(_ML_HINT) from exc
 
-        # TODO(rfdetr-api): rfdetr==1.1.0 loads a trained checkpoint by passing the
-        # weights path to the model constructor (pretrain_weights=...). If the
-        # installed rfdetr exposes a different loader (e.g. RFDETRMedium.from_pretrained
-        # or a load_state_dict path), adapt here. Kept narrow + documented on purpose.
+        # rfdetr loads a trained checkpoint by passing the weights path to the
+        # model constructor (pretrain_weights=...). The model CLASS follows
+        # cfg.model.name so a nano/small checkpoint is loaded into the matching
+        # architecture (previously hardcoded RFDETRMedium).
         num_classes = self._schema.num_classes
-        self._model = RFDETRMedium(
+        self._model = model_cls(
             pretrain_weights=str(self.path),
             num_classes=num_classes,
             resolution=self.resolution,

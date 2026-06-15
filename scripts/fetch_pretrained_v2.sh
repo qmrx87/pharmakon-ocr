@@ -42,9 +42,14 @@ else
 fi
 
 # Make sure the v2 extra is installed (transformers / sentencepiece / doctr).
-vlog "ensuring [v2] deps (transformers/sentencepiece/python-doctr) from the wheelhouse"
-python -m pip install --no-index transformers sentencepiece python-doctr \
-  || vwarn "wheelhouse install incomplete — check: avail_wheels transformers sentencepiece python_doctr"
+vlog "ensuring [v2] deps (transformers/sentencepiece/python-doctr)"
+if python -m pip install --no-index transformers sentencepiece python-doctr 2>/dev/null; then
+  vlog "v2 deps installed from the wheelhouse"
+else
+  vlog "wheelhouse install incomplete; attempting online install from PyPI"
+  python -m pip install transformers sentencepiece "python-doctr[torch]" \
+    || vwarn "wheelhouse and online install incomplete — check: avail_wheels transformers sentencepiece python_doctr"
+fi
 
 DONUT_BASE="${VIGNOCR_DONUT_BASE:-naver-clova-ix/donut-base}"
 

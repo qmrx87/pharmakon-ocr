@@ -51,6 +51,7 @@ set -Eeuo pipefail
 VIGNOCR_MODULE_STDENV="${VIGNOCR_MODULE_STDENV:-StdEnv/2023}"
 VIGNOCR_MODULE_PYTHON="${VIGNOCR_MODULE_PYTHON:-python/3.11}"
 VIGNOCR_MODULE_CUDA="${VIGNOCR_MODULE_CUDA:-cuda/12.6}"
+VIGNOCR_MODULE_OPENCV="${VIGNOCR_MODULE_OPENCV:-opencv}"
 
 # --------------------------------------------------------------------------- #
 # Logging helpers (stderr, timestamped). Keep parsing-friendly + greppable.
@@ -342,12 +343,12 @@ vignocr_load_modules() {
     vwarn "no 'module' command found (not on a Narval compute/login node?) — skipping module load"
     return 0
   fi
-  vlog "module load $VIGNOCR_MODULE_STDENV $VIGNOCR_MODULE_PYTHON $VIGNOCR_MODULE_CUDA"
+  vlog "module load $VIGNOCR_MODULE_STDENV $VIGNOCR_MODULE_PYTHON $VIGNOCR_MODULE_CUDA $VIGNOCR_MODULE_OPENCV"
   module --force purge 2>/dev/null || true
   # If a module name is stale on the live system, this is the line to adjust
   # (or override VIGNOCR_MODULE_* from your environment — no edit required).
-  module load "$VIGNOCR_MODULE_STDENV" "$VIGNOCR_MODULE_PYTHON" "$VIGNOCR_MODULE_CUDA" \
-    || vdie "module load failed — run 'module spider python' / 'module spider cuda' on Narval and override VIGNOCR_MODULE_{STDENV,PYTHON,CUDA}"
+  module load "$VIGNOCR_MODULE_STDENV" "$VIGNOCR_MODULE_PYTHON" "$VIGNOCR_MODULE_CUDA" "$VIGNOCR_MODULE_OPENCV" \
+    || vdie "module load failed — run 'module spider python' / 'module spider cuda' on Narval and override VIGNOCR_MODULE_{STDENV,PYTHON,CUDA,OPENCV}"
 }
 
 vignocr_activate_venv() {

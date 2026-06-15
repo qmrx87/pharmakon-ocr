@@ -41,8 +41,9 @@ if [[ -n "${SLURM_JOB_ID:-}" ]] && ! command -v avail_wheels >/dev/null 2>&1; th
   vwarn "If this is a salloc shell on a compute node, this script will fail. Run on the LOGIN node."
 fi
 
-# Activate the venv ONLY for the rfdetr Python entrypoint. We do NOT need the
-# venv to curl/wget — but rfdetr exposes an easier programmatic download path.
+# Load cluster modules so that Python and system libraries are loaded before the venv is activated.
+vignocr_load_modules
+
 if [[ -d "$VIGNOCR_VENV_DIR" ]]; then
   # shellcheck disable=SC1091
   source "$VIGNOCR_VENV_DIR/bin/activate"

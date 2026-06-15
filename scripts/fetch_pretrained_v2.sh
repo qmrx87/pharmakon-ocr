@@ -29,6 +29,9 @@ vlog "=== VignOCR V2 pretrained prefetch (LOGIN NODE) ==="
 vignocr_require_env
 vignocr_paths
 
+# Load cluster modules so that Python and system libraries (like OpenCV) are loaded before the venv is activated.
+vignocr_load_modules
+
 # The fetch itself must be ONLINE — undo lib.sh's offline-by-default stance for
 # THIS process only (compute jobs still get HF_HUB_OFFLINE=1 from lib.sh).
 export HF_HUB_OFFLINE=0 TRANSFORMERS_OFFLINE=0

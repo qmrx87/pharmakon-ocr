@@ -74,9 +74,11 @@ def test_ready_reports_stub_models(client: TestClient) -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body["ready"] is True
-    assert set(body["models"]) == {"detector", "recognizer", "nomenclature_version"}
+    # `variant` reports which reading strategy serves (v1 | vlm | fullpage).
+    assert set(body["models"]) == {"variant", "detector", "recognizer", "nomenclature_version"}
     # Real pipeline object, but stub backend (no ML libs / weights here).
     assert body["stub"] is False
+    assert body["models"]["variant"] == "v1"
     assert body["models"]["detector"] == "stub"
     assert body["models"]["recognizer"] == "stub"
     assert body["flow_default"] == "selling"

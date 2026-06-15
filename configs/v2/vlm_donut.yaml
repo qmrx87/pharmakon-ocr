@@ -1,0 +1,72 @@
+# =============================================================================
+# configs/v2/vlm_donut.yaml — V2a: OCR-free VLM (Donut) — vignette image -> JSON.
+#
+# One model replaces Stage B + Stage C: a fine-tuned Donut reads the cropped
+# vignette and emits {"num_lot": ..., "date_fab": ..., "date_exp": ...,
+# "num_enregistrement": ..., ...} directly. The deterministic core (checksum,
+# nomenclature correction, abstention) is UNCHANGED and shared with v1.
+#
+# Pretrained base: naver-clova-ix/donut-base (MIT licence, ~200M params) — the
+# document-understanding VLM proven on CORD/receipts; right-sized for a 4-8
+# field sticker (Florence-2/Qwen-VL are stronger but 5-30x heavier; revisit if
+# Donut's field accuracy plateaus under the business bar).
+#
+# OFFLINE: compute nodes read the HF cache only. Pre-fetch once on login node:
+#   bash scripts/fetch_pretrained_v2.sh
+# =============================================================================
+schema_version: 1
+
+model:
+  base: naver-clova-ix/donut-base
+  # Donut-base pretrains at 2560x1920 — far larger than a ~400x200 vignette
+  # needs. A smaller canvas cuts VRAM + latency ~10x with no information loss
+  # (input crops are upscaled to fit). H x W, multiple-of-32.
+  image_size: [640, 960]
+  max_length: 192                  # decoder budget: 8 fields x ~15 tokens + tags
+  task_start_token: "<s_vignocr>"
+
+# Which fields the VLM is trained to emit. Order = emission order (stable
+# decoding). The 4 business-critical fields first; the rest provide extra
+# supervision where the source annotation has them.
+fields:
+  - num_lot
+  - date_fab
+  - date_exp
+  - num_enregistrement
+  - ppa
+  - ppa_shp
+  - tr
+  - product_name
+
+dataset:
+  # Output of scripts/build_vlm_dataset.py (JSONL + images). Built from the
+  # Stage B `real` annotations + OCR'd crop values (reviewed labels.csv wins
+  # over fresh OCR when present).
+  dir: ocr_dataset_vlm
+  source_dataset: real             # data.yaml block the builder crops from
+  # Value sources, by priority: reviewed autolabel CSV > fresh OCR backend.
+  autolabel_dir: ocr_dataset       # stage 04 output (labels.csv per split)
+  ocr_backend: doctr               # doctr | stub  (builder-time pseudo-labels)
+  min_value_conf: 0.30             # below this the field is omitted from the target
+
+train:
+  seed: 1337
+  epochs: 30
+  batch_size: 4
+  grad_accum_steps: 4              # effective 16
+  lr: 3.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.05
+  precision: bf16                  # A100-safe; falls back to fp32 off-GPU
+  num_workers: 4
+  early_stop: { enabled: true, patience: 6, min_delta: 0.002 }   # on val field-EM
+  checkpoint:
+    dir: scratch/v2/donut          # under $VIGNOCR_SCRATCH on Narval
+    save_best: true
+    metric: field_em               # mean per-field exact-match on val
+
+eval:
+  # Normalizers applied before exact-match (reuses vignocr.parsing): dates are
+  # canonicalized, codes uppercased/despaced, money centime-quantized.
+  normalize: true
+  report_fields: [num_lot, date_fab, date_exp, num_enregistrement]

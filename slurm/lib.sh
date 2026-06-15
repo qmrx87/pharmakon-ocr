@@ -240,11 +240,15 @@ vignocr_paths() {
   if [[ -z "${HF_DATASETS_OFFLINE:-}" ]]; then export HF_DATASETS_OFFLINE=1; fi
   if [[ -z "${TORCH_HOME:-}" ]]; then export TORCH_HOME="$VIGNOCR_PRETRAINED_DIR/torch"; fi
   if [[ -z "${HF_HOME:-}" ]]; then export HF_HOME="$VIGNOCR_PRETRAINED_DIR/huggingface"; fi
+  # docTR (v2b full-page OCR) downloads det/rec weights on first use — point its
+  # cache into the shared pretrained dir so the login-node prefetch
+  # (scripts/fetch_pretrained_v2.sh) is what offline compute nodes read.
+  if [[ -z "${DOCTR_CACHE_DIR:-}" ]]; then export DOCTR_CACHE_DIR="$VIGNOCR_PRETRAINED_DIR/doctr"; fi
 
   mkdir -p \
     "$VIGNOCR_SCRATCH_DIR" "$VIGNOCR_RUNS_DIR" "$VIGNOCR_PROJECT_DIR" \
     "$VIGNOCR_LOGS_DIR" "$VIGNOCR_PRETRAINED_DIR" \
-    "$TORCH_HOME" "$HF_HOME"
+    "$TORCH_HOME" "$HF_HOME" "$DOCTR_CACHE_DIR"
 }
 
 # vignocr_logs_dir <stage> [jobid] -> echo (and create) the central log dir for a

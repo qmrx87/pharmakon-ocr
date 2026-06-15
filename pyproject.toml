@@ -92,6 +92,18 @@ ml = [
   "paddleocr>=2.9,<3",
   "paddlepaddle>=2.6,<3",
 ]
+# VignOCR v2 challenger variants (trained/compared against v1, the winner ships):
+#   v2a — Donut VLM fine-tune  (transformers + sentencepiece; torch from [ml])
+#   v2b — full-page docTR det + PARSeq rec (python-doctr[torch]; no training)
+# Torch-native by design: paddlepaddle is the known Narval-wheelhouse risk, the
+# HF/docTR stacks install clean with `pip install --no-index`. Weights are
+# pre-fetched on the login node (scripts/fetch_pretrained_v2.sh) into
+# $VIGNOCR_PRETRAINED_DIR; compute nodes read the cache offline.
+v2 = [
+  "transformers>=4.45",
+  "sentencepiece",
+  "python-doctr[torch]>=0.10",
+]
 dev = [
   "pytest==8.3.4",
   "pytest-cov==6.0.0",

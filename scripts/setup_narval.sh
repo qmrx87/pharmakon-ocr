@@ -315,7 +315,11 @@ for entry in \
     04_train_ocr \
     05_finetune_ocr \
     05_eval_ocr \
-    06_pipeline_benchmark; do
+    06_pipeline_benchmark \
+    00_smoke \
+    12_build_vlm_dataset \
+    13_train_vlm_donut \
+    14_compare_variants; do
   mkdir -p "$VIGNOCR_LOGS_DIR/$entry"
 done
 vlog "centralized SLURM log tree ready: $VIGNOCR_LOGS_DIR"

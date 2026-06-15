@@ -63,6 +63,16 @@ log = get_logger(__name__)
 _ENV_BACKEND = "VIGNOCR_PIPELINE_BACKEND"
 _VALID_BACKENDS = {"auto", "stub", "real"}
 
+# Pipeline VARIANT — which detect+read strategy fills `fields`:
+#   v1       : Stage B detector + per-field OCR (the original cascade)
+#   vlm      : v2a — fine-tuned Donut reads the vignette image -> JSON
+#   fullpage : v2b — docTR det + PARSeq rec over the vignette + layout parser
+# Everything AFTER the reads (ppa disambiguation, ppa_shp split, checksum,
+# nomenclature, reimbursability, abstention) is SHARED — that is the point of
+# the comparison: same deterministic core, different reading strategy.
+_ENV_VARIANT = "VIGNOCR_PIPELINE_VARIANT"
+_VALID_VARIANTS = {"v1", "vlm", "fullpage"}
+
 # classes.yaml `type` values that are structural/colour regions, not OCR fields.
 # (Mirrors ocr.infer.Recognizer._NON_TEXT_TYPES.) These are excluded from the
 # recognized `fields` map; their boxes are still used elsewhere (reimbursability).
@@ -112,17 +122,26 @@ class VignocrPipeline:
         self._preprocess_cfg: dict[str, Any] = self.cfg.get("preprocess", {}) or {}
         self._root: str = self._resolve_root()
         self._backend_mode: str = self._resolve_backend_mode()
+        self._variant: str = self._resolve_variant()
+        # v2a model dir (fine-tuned Donut). env > cfg; needed only when
+        # variant == "vlm".
+        self.vlm_model_dir: str | None = os.environ.get("VIGNOCR_VLM_MODEL_DIR") or self.cfg.get(
+            "vlm_model_dir"
+        )
 
         # --- lazily-built handles ---------------------------------------------
         self._detector: Any | None = None
         self._vignette_detector: Any | None = None
         self._recognizer: Any | None = None
         self._nomenclature_index: Any | None = None
+        self._v2_extractor: Any | None = None
+        self._abstention_cfg: dict[str, Any] | None = None
         self._resolved_backend: str | None = None  # "real" | "stub", set on first use
 
         log.info(
             "pipeline.init",
             backend_mode=self._backend_mode,
+            variant=self._variant,
             detector_path=self.detector_path,
             root=self._root,
             default_flow=self.default_flow,
@@ -166,15 +185,21 @@ class VignocrPipeline:
         with _timed(timings, "preprocess"):
             prepared = preprocess_mod.normalize(pil, self._preprocess_cfg)
 
-        # 2) Detect field boxes (real or stub).
-        with _timed(timings, "detect"):
-            detections = self._detect(prepared, image_id)
-
-        # 3) Per-field orient + crop -> 4) recognize.
-        with _timed(timings, "recognize"):
-            field_reads, ppa_candidates = self._recognize_fields(
-                prepared, detections, image_id, flow
-            )
+        # 2-4) READS. v1 = detect field boxes then per-crop OCR; v2 variants
+        # replace both with a single whole-vignette reader. Either way the
+        # result is the same `field_reads` contract — everything downstream
+        # (checksum / nomenclature / reimbursability / abstention) is shared.
+        if self._variant == "v1":
+            with _timed(timings, "detect"):
+                detections = self._detect(prepared, image_id)
+            with _timed(timings, "recognize"):
+                field_reads, ppa_candidates = self._recognize_fields(
+                    prepared, detections, image_id, flow
+                )
+        else:
+            detections = []  # no box detector ran; reimbursability abstains
+            with _timed(timings, "recognize"):
+                field_reads, ppa_candidates = self._v2_reads(prepared, flow)
 
         # 5) PPA disambiguation: choose the final "= XXX,XX DA" among PPA reads,
         #    BEFORE the checksum so it anchors prix+shp==ppa with the right value.
@@ -255,13 +280,29 @@ class VignocrPipeline:
         else the would-be backend), so ``/ready`` is honest about stub vs real.
         """
         backend = self._resolved_backend or self._would_be_backend()
+        if self._variant == "vlm":
+            return {
+                "variant": "vlm",
+                "detector": "donut",
+                "recognizer": _version_tag(self.vlm_model_dir, "donut"),
+                "nomenclature_version": self._nomenclature_version(),
+            }
+        if self._variant == "fullpage":
+            return {
+                "variant": "fullpage",
+                "detector": "doctr",
+                "recognizer": "parseq",
+                "nomenclature_version": self._nomenclature_version(),
+            }
         if backend == "real":
             return {
+                "variant": "v1",
                 "detector": _version_tag(self.detector_path, "rfdetr_medium"),
                 "recognizer": _version_tag(self.recognizer_path, self._ocr_backend_name()),
                 "nomenclature_version": self._nomenclature_version(),
             }
         return {
+            "variant": "v1",
             "detector": "stub",
             "recognizer": "stub",
             "nomenclature_version": self._nomenclature_version(),
@@ -339,6 +380,72 @@ class VignocrPipeline:
                     field_reads[name] = read
 
         return field_reads, ppa_candidates
+
+    # ------------------------------------------------------------------ #
+    # v2 variants (vlm / fullpage): whole-vignette reads -> FieldReads
+    # ------------------------------------------------------------------ #
+    def _get_v2_extractor(self) -> Any:
+        if self._v2_extractor is not None:
+            return self._v2_extractor
+        if self._variant == "vlm":
+            from vignocr.v2.donut_infer import DonutExtractor  # noqa: PLC0415
+
+            if not self.vlm_model_dir:
+                raise ImportError(
+                    "variant=vlm needs a fine-tuned Donut dir "
+                    "(set VIGNOCR_VLM_MODEL_DIR or cfg vlm_model_dir)"
+                )
+            self._v2_extractor = DonutExtractor(self.vlm_model_dir)
+        elif self._variant == "fullpage":
+            from vignocr.v2.fullpage import FullPageExtractor  # noqa: PLC0415
+
+            self._v2_extractor = FullPageExtractor()
+        else:  # pragma: no cover - guarded by _resolve_variant
+            raise ValueError(f"no v2 extractor for variant {self._variant!r}")
+        return self._v2_extractor
+
+    def _v2_reads(
+        self, image: Image.Image, flow: Flow
+    ) -> tuple[dict[str, FieldRead], list[FieldRead]]:
+        """Run the active v2 extractor and convert to the FieldRead contract.
+
+        The same per-flow abstention thresholds as v1 apply (read from
+        ``configs/parsing/fields.yaml: abstention``) so the variants compare on
+        reading quality, not on gate generosity.
+        """
+        raw = self._get_v2_extractor().extract(image)
+        field_reads: dict[str, FieldRead] = {}
+        ppa_candidates: list[FieldRead] = []
+        for name, (text, conf) in raw.items():
+            spec = self._safe_spec(name)
+            if spec is None or str(spec.get("type")) in _REGION_TYPES:
+                continue
+            tau = self._abstention_threshold(flow, name)
+            fr = FieldRead(
+                name=name,
+                value=text,
+                raw=text,
+                confidence=max(0.0, min(1.0, float(conf))),
+                status="ok" if conf >= tau else "abstain",
+                source="ocr",
+            )
+            if name == "ppa":
+                ppa_candidates.append(fr)
+                field_reads.setdefault("ppa", fr)
+            else:
+                field_reads[name] = fr
+        return field_reads, ppa_candidates
+
+    def _abstention_threshold(self, flow: Flow, field: str) -> float:
+        """Per-flow / per-field abstention threshold (mirrors ocr.infer)."""
+        if self._abstention_cfg is None:
+            try:
+                self._abstention_cfg = load_config("parsing/fields").get("abstention", {}) or {}
+            except Exception:  # noqa: BLE001 - config best-effort
+                self._abstention_cfg = {}
+        block = self._abstention_cfg.get(str(flow), {}) or {}
+        per_field = block.get("per_field", {}) or {}
+        return float(per_field.get(field, block.get("default", 0.5)))
 
     def _apply_nomenclature(
         self, fields: dict[str, FieldRead]
@@ -519,6 +626,20 @@ class VignocrPipeline:
             log.warning("pipeline.bad_backend_mode", value=mode, fallback="auto")
             return "auto"
         return mode
+
+    def _resolve_variant(self) -> str:
+        """Resolve the pipeline variant from env > cfg > 'v1'."""
+        raw = (
+            os.environ.get(_ENV_VARIANT)
+            or self.cfg.get("variant")
+            or (self.cfg.get("pipeline", {}) or {}).get("variant")
+            or "v1"
+        )
+        variant = str(raw).strip().lower()
+        if variant not in _VALID_VARIANTS:
+            log.warning("pipeline.bad_variant", value=variant, fallback="v1")
+            return "v1"
+        return variant
 
     def _resolve_root(self) -> str:
         """Resolve the dataset root (where the synthetic ground truth lives)."""

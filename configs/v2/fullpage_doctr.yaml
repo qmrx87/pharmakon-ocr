@@ -1,0 +1,49 @@
+# =============================================================================
+# configs/v2/fullpage_doctr.yaml — V2b: full-page OCR + layout rules.
+#
+# ZERO detector training: pretrained docTR text detection + PARSeq recognition
+# over the whole vignette crop, then a deterministic layout parser assigns the
+# words to fields (dates by pattern + chronology, lot by alphanum shape near the
+# dates, num_enregistrement by code pattern, money by amount pattern). The
+# deterministic core (checksum / nomenclature / abstention) is shared with v1.
+#
+# The vertical lot/dates strip is handled by a second OCR pass on the crop
+# rotated -90° (same convention as ocr.autolabel._orient_crop); the parser sees
+# words from both passes tagged with their source orientation.
+#
+# OFFLINE: pre-fetch docTR weights once on the login node:
+#   bash scripts/fetch_pretrained_v2.sh   (uses $DOCTR_CACHE_DIR from lib.sh)
+# =============================================================================
+schema_version: 1
+
+ocr:
+  det_arch: db_mobilenet_v3_large   # fast DBNet; db_resnet50 = +accuracy +ms
+  reco_arch: parseq                 # the chosen recognizer (Apache-2.0, torch)
+  pretrained: true
+  # A fine-tuned PARSeq state_dict (slurm/15_finetune_parseq.sbatch output).
+  # null = use the docTR-zoo pretrained weights as-is.
+  reco_weights: null
+  assume_straight_pages: true       # we rotate explicitly instead (2-pass)
+  rotated_pass: true                # second pass on the -90°-rotated crop
+  min_word_conf: 0.20               # drop noise words below this before parsing
+
+parser:
+  # Field assignment, all config-driven (no hardcoded layout pixels):
+  #   dates: tokens matching date_patterns; chronological order disambiguates
+  #          (date_fab is ALWAYS before date_exp).
+  #   num_lot: nearest non-date alphanum token to the date pair (same pass /
+  #          same column), shaped like lot_pattern.
+  #   num_enregistrement: token(s) matching code_pattern (longest match wins).
+  #   money: amount-shaped tokens; the parsing package owns normalization.
+  date_patterns:
+    - '\b\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}\b'
+    - '\b\d{1,2}[/\-.]\d{4}\b'                 # MM/YYYY variants
+  lot_pattern: '\b(?=[A-Z0-9\-]*\d)[A-Z0-9][A-Z0-9\-]{2,14}\b'
+  code_pattern: '\b\d{2,3}[/ ]?[0-9A-Z]{1,4}[/ ]?[0-9A-Z]{1,6}[/ ]?\d{2,4}\b'
+  money_pattern: '\b\d{1,6}[.,]\d{2}\b'
+  # Confidence handed to FieldRead = word confidence x this per-field factor
+  # (parsing is heuristic, so we discount vs a dedicated per-field read).
+  confidence_discount: 0.9
+
+eval:
+  report_fields: [num_lot, date_fab, date_exp, num_enregistrement]

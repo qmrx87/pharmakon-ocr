@@ -169,6 +169,43 @@ python -m pip install --no-index --upgrade \
     pytorch_lightning torchmetrics lightning_utilities \
   || vwarn "could not install the Lightning training stack from the wheelhouse. Check: avail_wheels pytorch_lightning torchmetrics lightning_utilities ; training WILL crash without it."
 
+# --------------------------------------------------------------------------- #
+# 4b. V2 challenger deps (Donut VLM + full-page docTR/PARSeq).
+#     NOT installed via `-e .[v2]`: editable extra-resolution drags a large
+#     transitive graph (and trips an old-pip marker bug), and the heavy HF/docTR
+#     stack is often NOT in the wheelhouse. We install explicitly: wheelhouse
+#     first (--no-index is torch-SAFE — it can only use CC wheels), then an
+#     ONLINE fallback that uses --no-deps for the torch-dependent package so it
+#     can NEVER replace the Compute Canada CUDA torch with a generic PyPI wheel
+#     (that silent swap is the classic Alliance GPU-breaker). v2 is OPTIONAL
+#     w.r.t. v1 — failures here WARN, they don't abort the [ml] setup.
+# --------------------------------------------------------------------------- #
+TORCH_CUDA_BEFORE="$(python -c 'import torch; print(torch.version.cuda)' 2>/dev/null || echo none)"
+
+vlog "installing v2 VLM deps (transformers/sentencepiece) — wheelhouse first, online fallback"
+python -m pip install --no-index transformers sentencepiece \
+  || python -m pip install transformers sentencepiece \
+  || vwarn "transformers/sentencepiece install incomplete — Donut (v2a) jobs 13/14 will fail to import"
+
+vlog "installing python-doctr (v2b full-page OCR / PARSeq) — wheelhouse first, torch-SAFE fallback"
+if ! python -m pip install --no-index "python-doctr[torch]"; then
+  vwarn "python-doctr not resolvable via --no-index; trying online with --no-deps (protects CUDA torch)"
+  python -m pip install --no-deps python-doctr \
+    || vwarn "python-doctr online install failed — v2b + the VLM-dataset doctr backend will be unavailable"
+  # docTR's non-torch runtime deps (install what the wheelhouse carries; a gap
+  # here is named precisely by the import verifier below, not a silent crash).
+  python -m pip install --no-index \
+      pypdfium2 anyascii langdetect defusedxml h5py shapely scipy tqdm \
+    || vwarn "some docTR deps are missing from the wheelhouse — see the v2 import check below"
+fi
+
+TORCH_CUDA_AFTER="$(python -c 'import torch; print(torch.version.cuda)' 2>/dev/null || echo none)"
+if [[ "$TORCH_CUDA_BEFORE" != "none" && "$TORCH_CUDA_AFTER" == "none" ]]; then
+  vdie "a v2 install REPLACED the CUDA torch with a CPU build (torch.version.cuda: ${TORCH_CUDA_BEFORE} -> none).
+    GPU training would silently run on CPU or crash. Recreate the venv and report:
+      bash scripts/setup_narval.sh --recreate"
+fi
+
 # Verify the critical import chain on CPU NOW so we catch wheelhouse gaps BEFORE
 # wasting a GPU allocation. This walks rfdetr → torchvision → torch._dynamo →
 # sympy, the chain that crashed the user's first training run — AND, crucially,
@@ -202,6 +239,22 @@ else
   vwarn "  pip install --no-index <missing-module>"
   vwarn "  # Discover what the wheelhouse has: avail_wheels <module>"
 fi
+
+# Verify the V2 import chain (WARN-ONLY — v1 detection/OCR does not need these;
+# only the v2 jobs 12/13/14 do). `python-doctr` imports as `doctr`.
+vlog "verifying V2 import chain (transformers / sentencepiece / doctr — warn-only):"
+python - <<'PY' 2>&1 || vwarn "V2 deps incomplete — v2 jobs (12/13/14) will fail until fixed; v1 is UNAFFECTED. Install the named module(s) on the LOGIN node: pip install --no-index <module> (or online --no-deps if absent from the wheelhouse)."
+import importlib
+missing = []
+for m in ("transformers", "sentencepiece", "doctr"):
+    try:
+        importlib.import_module(m)
+        print(f"    OK  {m}")
+    except Exception as e:
+        print(f"    MISSING {m}: {e.__class__.__name__}: {e}")
+        missing.append(m)
+raise SystemExit(1 if missing else 0)
+PY
 
 # Record the exact resolved environment next to the venv for provenance.
 python -m pip freeze > "$VIGNOCR_SCRATCH_DIR/pip_freeze.setup.txt" 2>/dev/null || true
@@ -353,5 +406,11 @@ cat >&2 <<EOF
   Switch to the real dataset (after annotation) without editing code:
 
       export VIGNOCR_DATA_ACTIVE=real
+
+  V2 CHALLENGERS (Donut VLM + full-page docTR/PARSeq) — this script already
+  installed their deps into the venv above. Pre-fetch their weights, then submit:
+
+      bash scripts/fetch_pretrained_v2.sh     # Donut + docTR + rfdetr-nano caches
+      bash slurm/submit_v2.sh                 # parallel DAG: build -> train -> compare
 [vignocr] ======================================================================
 EOF

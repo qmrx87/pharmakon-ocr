@@ -44,14 +44,26 @@ else
   vdie "venv not found at $VIGNOCR_VENV_DIR — run scripts/setup_narval.sh first"
 fi
 
-# Make sure the v2 extra is installed (transformers / sentencepiece / doctr).
-vlog "ensuring [v2] deps (transformers/sentencepiece/python-doctr)"
-if python -m pip install --no-index transformers sentencepiece python-doctr 2>/dev/null; then
-  vlog "v2 deps installed from the wheelhouse"
-else
-  vlog "wheelhouse install incomplete; attempting online install from PyPI"
-  python -m pip install transformers sentencepiece "python-doctr[torch]" \
-    || vwarn "wheelhouse and online install incomplete — check: avail_wheels transformers sentencepiece python_doctr"
+# Make sure the v2 deps are present (transformers / sentencepiece / doctr).
+# The canonical installer is scripts/setup_narval.sh; this is a belt-and-braces
+# top-up. CRITICAL: the online fallback must NEVER replace the Compute Canada
+# CUDA torch with a generic PyPI wheel, so doctr's online path uses --no-deps
+# (torch/torchvision are already installed from [ml]).
+TORCH_CUDA_BEFORE="$(python -c 'import torch; print(torch.version.cuda)' 2>/dev/null || echo none)"
+vlog "ensuring [v2] deps (transformers/sentencepiece/python-doctr) — wheelhouse first"
+python -m pip install --no-index transformers sentencepiece \
+  || python -m pip install transformers sentencepiece \
+  || vwarn "transformers/sentencepiece install incomplete"
+if ! python -m pip install --no-index "python-doctr[torch]" 2>/dev/null; then
+  vwarn "python-doctr not in wheelhouse; online install with --no-deps (protects CUDA torch)"
+  python -m pip install --no-deps python-doctr \
+    || vwarn "python-doctr online install failed — v2b unavailable"
+  python -m pip install --no-index pypdfium2 anyascii langdetect defusedxml h5py shapely scipy tqdm \
+    || vwarn 'some docTR deps missing from the wheelhouse — import doctr will name them'
+fi
+TORCH_CUDA_AFTER="$(python -c 'import torch; print(torch.version.cuda)' 2>/dev/null || echo none)"
+if [[ "$TORCH_CUDA_BEFORE" != "none" && "$TORCH_CUDA_AFTER" == "none" ]]; then
+  vdie "a v2 install REPLACED the CUDA torch with a CPU build (cuda: ${TORCH_CUDA_BEFORE} -> none). Recreate the venv: bash scripts/setup_narval.sh --recreate"
 fi
 
 DONUT_BASE="${VIGNOCR_DONUT_BASE:-naver-clova-ix/donut-base}"

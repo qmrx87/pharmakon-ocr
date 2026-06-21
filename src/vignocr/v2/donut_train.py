@@ -103,7 +103,13 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
 
     # Shrink the canvas to vignette scale (Donut-base pretrains at 2560x1920 —
     # 10x more pixels than a sticker needs; this is the main latency lever).
-    processor.image_processor.size = {"height": image_size[0], "width": image_size[1]}
+    # transformers renamed DonutProcessor.feature_extractor -> .image_processor
+    # around 4.27; support both so the wheelhouse version (whatever it is) works.
+    img_proc = getattr(processor, "image_processor", None) or getattr(
+        processor, "feature_extractor", None
+    )
+    if img_proc is not None:
+        img_proc.size = {"height": image_size[0], "width": image_size[1]}
     model.config.encoder.image_size = image_size
 
     # Register the field tags + task token as single-id special tokens.

@@ -99,10 +99,16 @@ ml = [
 # HF/docTR stacks install clean with `pip install --no-index`. Weights are
 # pre-fetched on the login node (scripts/fetch_pretrained_v2.sh) into
 # $VIGNOCR_PRETRAINED_DIR; compute nodes read the cache offline.
+# Ranges kept WIDE on purpose: on Narval these install from the Compute Canada
+# wheelhouse (whatever version it carries), and scripts/setup_narval.sh installs
+# them EXPLICITLY (not via `-e .[v2]`) so the resolver never drags torch. Donut
+# (DonutProcessor / VisionEncoderDecoder / image_processor) is stable since
+# transformers 4.26; PARSeq is in docTR since 0.7 — so the floors below are the
+# real minimums, not aspirational pins.
 v2 = [
-  "transformers>=4.45",
+  "transformers>=4.30",
   "sentencepiece",
-  "python-doctr[torch]>=0.10",
+  "python-doctr[torch]>=0.8",
 ]
 dev = [
   "pytest==8.3.4",

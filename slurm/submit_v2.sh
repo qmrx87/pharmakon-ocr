@@ -45,6 +45,32 @@ vignocr_paths
 export VIGNOCR_DATA_ACTIVE="${VIGNOCR_DATA_ACTIVE:-real}"
 vlog "V2 DAG | account=$VIGNOCR_ACCOUNT skip_cropper=$SKIP_CROPPER test_only=$TEST_ONLY"
 
+# ── Preflight: the scratch venv MUST already carry the v2 deps (compute nodes
+#    are OFFLINE and cannot install). Catch a missing stack HERE, on the login
+#    node, instead of after 4 jobs queue and die at import. Skip with
+#    VIGNOCR_SKIP_PREFLIGHT=1. transformers+sentencepiece gate v2a (Donut);
+#    doctr gates v2b + the dataset value backend — missing doctr only WARNS
+#    (you can still run with VIGNOCR_VLM_VALUE_BACKEND=stub).
+if [[ "${VIGNOCR_SKIP_PREFLIGHT:-0}" != "1" && -d "$VIGNOCR_VENV_DIR" ]]; then
+  vlog "preflight: checking v2 deps in $VIGNOCR_VENV_DIR"
+  vignocr_load_modules   # the venv's python needs its base `module load python` on PATH
+  # shellcheck disable=SC1091
+  source "$VIGNOCR_VENV_DIR/bin/activate"
+  python - <<'PY' || vdie "v2 deps missing from the venv — run 'bash scripts/setup_narval.sh' on the LOGIN node first (compute nodes have no internet). Override with VIGNOCR_SKIP_PREFLIGHT=1."
+import importlib.util as u
+import sys
+hard = ["transformers", "sentencepiece"]   # v2a Donut — required
+soft = ["doctr"]                            # v2b / dataset value backend
+for m in hard + soft:
+    print(f"    {'OK     ' if u.find_spec(m) else 'MISSING'} {m}")
+if any(u.find_spec(m) is None for m in soft):
+    print("  WARN: doctr missing — v2b + the doctr value backend are unavailable "
+          "(you can still build the dataset with VIGNOCR_VLM_VALUE_BACKEND=stub)")
+missing_hard = [m for m in hard if u.find_spec(m) is None]
+sys.exit(1 if missing_hard else 0)
+PY
+fi
+
 for d in 02a_train_vignette 12_build_vlm_dataset 13_train_vlm_donut 14_compare_variants; do
   mkdir -p "$VIGNOCR_LOGS_DIR/$d"
 done

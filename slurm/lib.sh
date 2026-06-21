@@ -52,6 +52,13 @@ VIGNOCR_MODULE_STDENV="${VIGNOCR_MODULE_STDENV:-StdEnv/2023}"
 VIGNOCR_MODULE_PYTHON="${VIGNOCR_MODULE_PYTHON:-python/3.11}"
 VIGNOCR_MODULE_CUDA="${VIGNOCR_MODULE_CUDA:-cuda/12.6}"
 VIGNOCR_MODULE_OPENCV="${VIGNOCR_MODULE_OPENCV:-opencv}"
+# hdf5: ONLY the v2 docTR path needs it. python-doctr imports `h5py` at
+# `import doctr` (via its SVHN dataset loader), and the Compute Canada h5py
+# wheel must link the MATCHING hdf5 module — without it you get
+# `ImportError: ... libhdf5_hl.so: undefined symbol: H5T_IEEE_F16BE_g`
+# (a skewed libhdf5 set). Loaded NON-FATALLY below so v1 (rfdetr/paddle, which
+# never imports h5py) is never broken by a missing/renamed hdf5 module.
+VIGNOCR_MODULE_HDF5="${VIGNOCR_MODULE_HDF5:-hdf5}"
 
 # --------------------------------------------------------------------------- #
 # Logging helpers (stderr, timestamped). Keep parsing-friendly + greppable.
@@ -349,6 +356,12 @@ vignocr_load_modules() {
   # (or override VIGNOCR_MODULE_* from your environment — no edit required).
   module load "$VIGNOCR_MODULE_STDENV" "$VIGNOCR_MODULE_PYTHON" "$VIGNOCR_MODULE_CUDA" "$VIGNOCR_MODULE_OPENCV" \
     || vdie "module load failed — run 'module spider python' / 'module spider cuda' on Narval and override VIGNOCR_MODULE_{STDENV,PYTHON,CUDA,OPENCV}"
+  # hdf5 for the v2 docTR path (see the VIGNOCR_MODULE_HDF5 note above). NON-FATAL:
+  # v1 never imports h5py, so a missing hdf5 module must not abort training. If
+  # the default doesn't match the installed h5py wheel, override the version, e.g.
+  #   export VIGNOCR_MODULE_HDF5=hdf5/1.14.6
+  module load "$VIGNOCR_MODULE_HDF5" 2>/dev/null \
+    || vwarn "could not load hdf5 module ('$VIGNOCR_MODULE_HDF5') — only the v2 docTR path needs it; v1/v2a unaffected. If v2 doctr fails with an h5py 'undefined symbol' error, run 'module spider hdf5' and set VIGNOCR_MODULE_HDF5."
 }
 
 vignocr_activate_venv() {

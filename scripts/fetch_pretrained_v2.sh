@@ -76,14 +76,33 @@ path = snapshot_download(sys.argv[1])
 print(f"    cached: {path}")
 PY
 
+# docTR imports h5py at `import doctr` (SVHN loader); the CC h5py wheel needs the
+# matching hdf5 module, which vignocr_load_modules now loads. Sanity-check it
+# here with a precise message before constructing predictors.
 vlog "2/3 prefetch docTR weights (det=db_mobilenet_v3_large, rec=parseq) -> ${DOCTR_CACHE_DIR}"
-python - <<'PY'
+if ! python -c "import h5py" 2>/dev/null; then
+  vwarn "h5py import failed (docTR dependency). This is the hdf5 ABI mismatch:"
+  vwarn "  run 'module spider hdf5' and re-run with the matching version, e.g."
+  vwarn "      export VIGNOCR_MODULE_HDF5=hdf5/1.14.6 && bash scripts/fetch_pretrained_v2.sh"
+fi
+# NON-FATAL: a docTR/h5py failure must NOT abort the run — the Donut base (1/3)
+# is already cached and the nano weights (3/3) still need fetching. v2b is the
+# weaker challenger; v2a (Donut) + v1 do not depend on docTR.
+if python - <<'PY'
 # Constructing the predictors triggers docTR's own download-into-cache.
 from doctr.models import ocr_predictor, recognition_predictor
 ocr_predictor(det_arch="db_mobilenet_v3_large", reco_arch="parseq", pretrained=True)
 recognition_predictor("parseq", pretrained=True)
 print("    docTR det+rec cached")
 PY
+then
+  vlog "docTR weights cached"
+else
+  vwarn "docTR prefetch FAILED — v2b (full-page OCR) will be unavailable until fixed."
+  vwarn "v2a (Donut) and the v1 pipeline are NOT affected. To run the comparison"
+  vwarn "without v2b, build the dataset with VIGNOCR_VLM_VALUE_BACKEND=stub (or after"
+  vwarn "your Roboflow review, the reviewed labels are used and no OCR backend is needed)."
+fi
 
 vlog "3/3 prefetch RF-DETR nano COCO weights (v2 vignette cropper)"
 VIGNOCR_RFDETR_SIZE=nano bash "$SCRIPT_DIR/fetch_pretrained.sh" \

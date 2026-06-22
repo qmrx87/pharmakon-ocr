@@ -86,7 +86,7 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
         from PIL import Image
         from torch.utils.data import DataLoader, Dataset
         from transformers import (
-            DonutProcessor,
+            AutoProcessor,
             VisionEncoderDecoderModel,
             get_linear_schedule_with_warmup,
         )
@@ -98,7 +98,10 @@ def run(cfg_path: str, run_dir: Path | str, resume: Path | str | None = None) ->
     image_size = list(mcfg.get("image_size", [640, 960]))  # H, W
     max_length = int(mcfg.get("max_length", 192))
 
-    processor = DonutProcessor.from_pretrained(base)
+    # AutoProcessor resolves to DonutProcessor and is stable across the
+    # transformers 4.x/5.x split (the `DonutProcessor` import path moved in 5.x;
+    # the venv here is transformers 5.10.1).
+    processor = AutoProcessor.from_pretrained(base)
     model = VisionEncoderDecoderModel.from_pretrained(base)
 
     # Shrink the canvas to vignette scale (Donut-base pretrains at 2560x1920 —

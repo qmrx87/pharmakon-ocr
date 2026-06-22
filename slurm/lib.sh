@@ -403,6 +403,37 @@ vignocr_git_dirty() {
   ( cd "$VIGNOCR_REPO_ROOT" && [[ -n "$(git status --porcelain 2>/dev/null)" ]] ) && echo "-dirty" || echo ""
 }
 
+# vignocr_warn_if_stale: REFUSE to submit when this checkout is BEHIND its git
+# upstream. This is the #1 recurring failure on Narval: a stale `git pull` leaves
+# the compute jobs running OLD code, so a fix already on origin "still fails"
+# (e.g. job 63684084 ran 21bb809-dirty and used the pre-TrOCR doctr default that
+# was fixed two commits earlier). Fetches first (login nodes have network),
+# compares HEAD to @{u}: behind -> vdie unless VIGNOCR_SKIP_GIT_CHECK=1; a dirty
+# tree -> warn only; no upstream / git absent / offline -> warn only. Call this
+# at the TOP of every submit_* script, after vignocr_paths.
+vignocr_warn_if_stale() {
+  command -v git >/dev/null 2>&1 || return 0
+  local root="${VIGNOCR_REPO_ROOT:-.}"
+  git -C "$root" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  git -C "$root" fetch --quiet 2>/dev/null || vwarn "git fetch failed (offline?) — staleness check is best-effort"
+  local head up behind
+  head="$(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  up="$(git -C "$root" rev-parse --abbrev-ref --symbolic-full-name '@{u}' 2>/dev/null || echo '')"
+  if [[ -n "$up" ]]; then
+    behind="$(git -C "$root" rev-list --count "HEAD..@{u}" 2>/dev/null || echo 0)"
+    if [[ "${behind:-0}" -gt 0 ]]; then
+      vwarn "this checkout is ${behind} commit(s) BEHIND ${up} (HEAD=${head}) — you may be submitting STALE code."
+      vwarn "  fix:  git -C $root pull --ff-only"
+      vwarn "  if local edits block the pull:  git -C $root fetch && git -C $root reset --hard @{u}"
+      [[ "${VIGNOCR_SKIP_GIT_CHECK:-0}" == "1" ]] \
+        || vdie "refusing to submit stale code — pull first, or override with VIGNOCR_SKIP_GIT_CHECK=1"
+    fi
+  fi
+  [[ -n "$(git -C "$root" status --porcelain 2>/dev/null)" ]] \
+    && vwarn "working tree is DIRTY (HEAD=${head}) — jobs run the on-disk code, which may differ from what was tested/committed."
+  return 0
+}
+
 # vignocr_resolve_seed: single source of truth for the seed is configs/data.yaml
 # (datasets.synthetic.seed). We read it with the stdlib only (no PyYAML import)
 # so this works even before the venv is active; default 1337 if unreadable.

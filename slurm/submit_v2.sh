@@ -42,6 +42,7 @@ done
 
 vignocr_require_env
 vignocr_paths
+vignocr_warn_if_stale   # refuse to submit a stale checkout (the recurring root cause)
 export VIGNOCR_DATA_ACTIVE="${VIGNOCR_DATA_ACTIVE:-real}"
 vlog "V2 DAG | account=$VIGNOCR_ACCOUNT skip_cropper=$SKIP_CROPPER test_only=$TEST_ONLY"
 
@@ -56,18 +57,30 @@ if [[ "${VIGNOCR_SKIP_PREFLIGHT:-0}" != "1" && -d "$VIGNOCR_VENV_DIR" ]]; then
   vignocr_load_modules   # the venv's python needs its base `module load python` on PATH
   # shellcheck disable=SC1091
   source "$VIGNOCR_VENV_DIR/bin/activate"
-  python - <<'PY' || vdie "v2 deps missing from the venv — run 'bash scripts/setup_narval.sh' on the LOGIN node first (compute nodes have no internet). Override with VIGNOCR_SKIP_PREFLIGHT=1."
-import importlib.util as u
-import sys
-hard = ["transformers", "sentencepiece"]   # v2a Donut — required
-soft = ["doctr"]                            # v2b / dataset value backend
-for m in hard + soft:
-    print(f"    {'OK     ' if u.find_spec(m) else 'MISSING'} {m}")
-if any(u.find_spec(m) is None for m in soft):
-    print("  WARN: doctr missing — v2b + the doctr value backend are unavailable "
-          "(you can still build the dataset with VIGNOCR_VLM_VALUE_BACKEND=stub)")
-missing_hard = [m for m in hard if u.find_spec(m) is None]
-sys.exit(1 if missing_hard else 0)
+  # REAL imports, not importlib.find_spec: a module can be *locatable* yet fail
+  # to import (e.g. doctr's h5py 'undefined symbol' ABI break — find_spec passed
+  # it, then stage 12/14 died). Importing here gives the login node the truth.
+  # transformers+sentencepiece gate v2a (Donut) -> HARD. doctr gates only v2b +
+  # the *optional* doctr value backend (the default is trocr) -> SOFT (warn).
+  python - <<'PY' || vdie "v2a deps (transformers/sentencepiece) are missing or broken in the venv — run 'bash scripts/setup_narval.sh' on the LOGIN node first (compute nodes have no internet). Override with VIGNOCR_SKIP_PREFLIGHT=1."
+import importlib, sys
+def _try(mod):
+    try:
+        importlib.import_module(mod); return None
+    except Exception as e:  # ImportError OR a native-lib ABI error at import
+        return f"{type(e).__name__}: {e}"
+hard_fail = []
+for m in ("transformers", "sentencepiece"):   # v2a Donut — required
+    err = _try(m)
+    print(f"    {'OK     ' if err is None else 'BROKEN '} {m}" + (f"  ({err})" if err else ""))
+    if err: hard_fail.append(m)
+err = _try("doctr")                            # v2b + optional doctr value backend
+print(f"    {'OK     ' if err is None else 'BROKEN '} doctr" + (f"  ({err})" if err else ""))
+if err:
+    print("  WARN: doctr unimportable -> v2b (full-page) will be SKIPPED by the")
+    print("        comparison, and the VLM dataset MUST use the trocr backend")
+    print("        (the default). v2a (Donut) + v1 are UNAFFECTED.")
+sys.exit(1 if hard_fail else 0)
 PY
 fi
 

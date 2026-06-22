@@ -68,6 +68,7 @@ vignocr_require_env
 # Resolve the storage tiers so the summary can show $VIGNOCR_RUNS_DIR. This is
 # cheap and login-node-safe (it only needs the repo root + makes scratch dirs).
 vignocr_paths
+vignocr_warn_if_stale   # refuse to submit a stale checkout (the recurring root cause)
 # The training DAG trains on the REAL exports (detection configs bind to
 # dataset: real / vignette). Default the global selector to `real` so the
 # validate stage + dataset symlink wiring agree with what training consumes.

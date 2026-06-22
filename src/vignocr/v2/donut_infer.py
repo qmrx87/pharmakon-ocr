@@ -45,10 +45,12 @@ class DonutExtractor:
             return
         try:
             import torch
-            from transformers import DonutProcessor, VisionEncoderDecoderModel
+            from transformers import AutoProcessor, VisionEncoderDecoderModel
         except ImportError as exc:  # pragma: no cover - env-dependent
             raise ImportError(_V2_HINT) from exc
-        self._processor = DonutProcessor.from_pretrained(self.model_dir)
+        # AutoProcessor resolves to DonutProcessor (stable across transformers
+        # 4.x/5.x; the import path of DonutProcessor itself moved in 5.x).
+        self._processor = AutoProcessor.from_pretrained(self.model_dir)
         self._model = VisionEncoderDecoderModel.from_pretrained(self.model_dir)
         self._device = self._device or ("cuda" if torch.cuda.is_available() else "cpu")
         self._model.to(self._device).eval()

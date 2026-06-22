@@ -31,7 +31,7 @@ vignocr_preamble "12_build_vlm_dataset"
 # Dataset lands on SCRATCH (images are copied next to metadata.jsonl).
 VLM_DATASET_DIR="${VIGNOCR_VLM_DATASET_DIR:-$VIGNOCR_SCRATCH_DIR/datasets/vlm}"
 export VIGNOCR_VLM_DATASET_DIR="$VLM_DATASET_DIR"
-BACKEND="${VIGNOCR_VLM_VALUE_BACKEND:-doctr}"
+BACKEND="${VIGNOCR_VLM_VALUE_BACKEND:-trocr}"
 
 vlog "building VLM dataset -> $VLM_DATASET_DIR (value backend: $BACKEND)"
 set +e

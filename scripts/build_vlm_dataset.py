@@ -46,6 +46,7 @@ from vignocr.v2.donut_format import json2token  # noqa: F401  (re-export conveni
 
 log = get_logger(__name__)
 
+_TROCR_HINT = "The trocr backend needs transformers. Run: pip install -e .[ml,v2]"
 _V2_HINT = "The doctr backend needs the v2 extra. Run: pip install -e .[ml,v2]"
 
 
@@ -61,8 +62,61 @@ class StubValueBackend:
         return f"AUTO_{field.upper()}", 0.50
 
 
+class TrocrValueBackend:
+    """Pretrained TrOCR recognition on a single field crop (DEFAULT).
+
+    Pure ``transformers`` — no docTR/h5py/opencv-hdf5 entanglement, so it works
+    on Narval out of the box (only the [ml]+v2 transformers stack is needed).
+    Used ONLY to bootstrap pseudo-labels for un-reviewed crops; the final v2b
+    recognizer is still PARSeq, and reviewed Roboflow labels always override
+    these. ``microsoft/trocr-base-printed`` is tuned for printed text.
+    """
+
+    name = "trocr"
+
+    def __init__(self, model_name: str = "microsoft/trocr-base-printed") -> None:
+        try:
+            import torch  # noqa: F401
+            from transformers import AutoProcessor, VisionEncoderDecoderModel
+        except ImportError as exc:  # pragma: no cover - env-dependent
+            raise ImportError(_TROCR_HINT) from exc
+        import torch
+
+        # AutoProcessor resolves to TrOCRProcessor and is stable across the
+        # transformers 4.x/5.x split (TrOCRProcessor's import path moved in 5.x).
+        self._proc = AutoProcessor.from_pretrained(model_name)
+        self._model = VisionEncoderDecoderModel.from_pretrained(model_name)
+        self._device = "cuda" if torch.cuda.is_available() else "cpu"
+        self._model.to(self._device).eval()
+        log.info("vlm_dataset.trocr_loaded", model=model_name, device=self._device)
+
+    def read(self, crop: Any, field: str) -> tuple[str, float]:
+        import torch
+
+        pix = self._proc(
+            images=crop.convert("RGB"), return_tensors="pt"
+        ).pixel_values.to(self._device)
+        with torch.no_grad():
+            out = self._model.generate(
+                pix, max_new_tokens=32, output_scores=True, return_dict_in_generate=True
+            )
+        text = self._proc.batch_decode(out.sequences, skip_special_tokens=True)[0]
+        # Sequence confidence = exp(mean top-token log-prob) over generated steps.
+        conf = 1.0
+        if getattr(out, "scores", None):
+            lps = [float(torch.log_softmax(s[0], dim=-1).max()) for s in out.scores]
+            if lps:
+                conf = float(torch.tensor(lps).mean().exp())
+        return str(text).strip(), conf
+
+
 class DoctrValueBackend:
-    """Pretrained docTR recognition (PARSeq) on a single field crop."""
+    """Pretrained docTR recognition (PARSeq) on a single field crop.
+
+    NOTE: `import doctr` pulls h5py + the opencv module's libhdf5; on Narval this
+    needs the LD_PRELOAD hdf5 fix in slurm/lib.sh. Prefer the `trocr` backend
+    (default) unless you specifically want PARSeq-bootstrapped labels.
+    """
 
     name = "doctr"
 
@@ -85,12 +139,14 @@ class DoctrValueBackend:
         return str(value), float(conf)
 
 
-def _build_backend(name: str) -> Any:
+def _build_backend(name: str, trocr_model: str = "microsoft/trocr-base-printed") -> Any:
     if name == "stub":
         return StubValueBackend()
+    if name == "trocr":
+        return TrocrValueBackend(trocr_model)
     if name == "doctr":
         return DoctrValueBackend()
-    raise ValueError(f"unknown value backend {name!r} (use 'doctr' or 'stub')")
+    raise ValueError(f"unknown value backend {name!r} (use 'trocr', 'doctr', or 'stub')")
 
 
 # --------------------------------------------------------------------------- #
@@ -139,7 +195,10 @@ def build(
     out_root = Path(output_dir or dcfg.get("dir", "ocr_dataset_vlm"))
     out_root.mkdir(parents=True, exist_ok=True)
     autolabel_dir = Path(dcfg.get("autolabel_dir", "ocr_dataset"))
-    be = _build_backend(backend or str(dcfg.get("ocr_backend", "doctr")))
+    be = _build_backend(
+        backend or str(dcfg.get("ocr_backend", "trocr")),
+        trocr_model=str(dcfg.get("trocr_model", "microsoft/trocr-base-printed")),
+    )
 
     schema = get_classes()
     rotated = set(schema.role("rotated_fields") or [])
@@ -265,8 +324,8 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--config", default="v2/vlm_donut", help="config name under configs/")
     p.add_argument("--output", default=None, help="output dir (default: cfg dataset.dir)")
-    p.add_argument("--backend", default=None, choices=("doctr", "stub"),
-                   help="value backend override (default: cfg dataset.ocr_backend)")
+    p.add_argument("--backend", default=None, choices=("trocr", "doctr", "stub"),
+                   help="value backend override (default: cfg dataset.ocr_backend = trocr)")
     p.add_argument("--splits", nargs="*", default=None)
     p.add_argument("--seed", type=int, default=1337)
     args = p.parse_args(argv)

@@ -67,13 +67,18 @@ if [[ "$TORCH_CUDA_BEFORE" != "none" && "$TORCH_CUDA_AFTER" == "none" ]]; then
 fi
 
 DONUT_BASE="${VIGNOCR_DONUT_BASE:-naver-clova-ix/donut-base}"
+TROCR_BASE="${VIGNOCR_TROCR_BASE:-microsoft/trocr-base-printed}"
 
-vlog "1/3 prefetch Donut base ($DONUT_BASE) -> $HF_HOME"
-python - "$DONUT_BASE" <<'PY'
+# Donut (v2a) + TrOCR (the DEFAULT VLM-dataset value backend) are both pure-HF
+# snapshots — Narval-clean, no native-lib entanglement. Fetch both up front so
+# the v2a path (build-dataset -> train-donut -> compare) never touches docTR.
+vlog "1/3 prefetch HF models: Donut ($DONUT_BASE) + TrOCR ($TROCR_BASE) -> $HF_HOME"
+python - "$DONUT_BASE" "$TROCR_BASE" <<'PY'
 import sys
 from huggingface_hub import snapshot_download
-path = snapshot_download(sys.argv[1])
-print(f"    cached: {path}")
+for repo in sys.argv[1:]:
+    path = snapshot_download(repo)
+    print(f"    cached: {repo} -> {path}")
 PY
 
 # docTR imports h5py at `import doctr` (SVHN loader); the CC h5py wheel needs the

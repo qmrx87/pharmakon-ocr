@@ -362,6 +362,22 @@ vignocr_load_modules() {
   #   export VIGNOCR_MODULE_HDF5=hdf5/1.14.6
   module load "$VIGNOCR_MODULE_HDF5" 2>/dev/null \
     || vwarn "could not load hdf5 module ('$VIGNOCR_MODULE_HDF5') — only the v2 docTR path needs it; v1/v2a unaffected. If v2 doctr fails with an h5py 'undefined symbol' error, run 'module spider hdf5' and set VIGNOCR_MODULE_HDF5."
+
+  # h5py-vs-opencv soname race. python-doctr's `doctr.io` imports cv2 (the opencv
+  # module) BEFORE `doctr.models` imports h5py. opencv links an OLDER libhdf5 with
+  # the SAME soname (libhdf5.so.310), so it loads first and h5py's libhdf5_hl then
+  # can't resolve the float16 symbol H5T_IEEE_F16BE_g (added in HDF5 1.14.4):
+  #   ImportError: .../libhdf5_hl.so.310: undefined symbol: H5T_IEEE_F16BE_g
+  # Force the hdf5-MODULE's (newer) libhdf5 to win process-wide via LD_PRELOAD so
+  # both cv2 and h5py share it. Guarded on the module actually loading (EBROOTHDF5
+  # set by Lmod) and the files existing. Harmless to v1/v2a (nothing else needs a
+  # specific hdf5; cv2's core image ops are unaffected by a newer-patch hdf5).
+  if [[ -n "${EBROOTHDF5:-}" && -e "$EBROOTHDF5/lib/libhdf5.so" ]]; then
+    export LD_PRELOAD="$EBROOTHDF5/lib/libhdf5.so${LD_PRELOAD:+:$LD_PRELOAD}"
+    [[ -e "$EBROOTHDF5/lib/libhdf5_hl.so" ]] \
+      && export LD_PRELOAD="$EBROOTHDF5/lib/libhdf5_hl.so:$LD_PRELOAD"
+    vlog "LD_PRELOAD set for hdf5 ($EBROOTHDF5/lib) so docTR's h5py and opencv share one libhdf5"
+  fi
 }
 
 vignocr_activate_venv() {

@@ -46,7 +46,12 @@ dataset:
   source_dataset: real             # data.yaml block the builder crops from
   # Value sources, by priority: reviewed autolabel CSV > fresh OCR backend.
   autolabel_dir: ocr_dataset       # stage 04 output (labels.csv per split)
-  ocr_backend: doctr               # doctr | stub  (builder-time pseudo-labels)
+  # Builder-time pseudo-label OCR for UN-reviewed crops. trocr (default) is pure
+  # transformers (Narval-clean); doctr=PARSeq needs the hdf5/opencv LD_PRELOAD
+  # fix; stub=deterministic placeholders (CPU tests only). Reviewed Roboflow
+  # labels always override these regardless of backend.
+  ocr_backend: trocr               # trocr | doctr | stub
+  trocr_model: microsoft/trocr-base-printed
   min_value_conf: 0.30             # below this the field is omitted from the target
 
 train:

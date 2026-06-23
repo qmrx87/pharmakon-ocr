@@ -49,10 +49,13 @@ RUN apt-get update \
 COPY pyproject.toml README.md ./
 COPY src ./src
 
-# Install the CORE deps + the project (NOT `.[ml]`), then onnxruntime for CPU
-# inference (version pinned to match the `[ml]` extra in pyproject).
+# Install the CORE deps + the project + the [claude] extra (anthropic) so the
+# Claude-backed variants (vignette `claude` + FactureOCR) work in this image,
+# then onnxruntime for CPU inference of the on-prem variant. Deliberately NOT
+# `.[ml]` (torch/rfdetr/paddle live there, for GPU training/export only).
+# Runtime needs ANTHROPIC_API_KEY for the Claude paths (images leave the host).
 RUN pip install --upgrade pip \
-    && pip install . \
+    && pip install ".[claude]" \
     && pip install "onnxruntime==1.20.1"
 
 # --- App assets --------------------------------------------------------------

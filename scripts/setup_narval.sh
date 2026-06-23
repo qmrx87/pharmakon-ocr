@@ -206,6 +206,14 @@ if [[ "$TORCH_CUDA_BEFORE" != "none" && "$TORCH_CUDA_AFTER" == "none" ]]; then
       bash scripts/setup_narval.sh --recreate"
 fi
 
+# v2c Claude API SDK (pure HTTP, no torch/native deps — torch-safe). Used only by
+# the `claude` comparison variant, which runs on the LOGIN node (network +
+# ANTHROPIC_API_KEY), never on offline compute nodes. Wheelhouse first, then online.
+vlog "ensuring anthropic SDK (v2c claude variant) — wheelhouse first, online fallback"
+python -m pip install --no-index anthropic 2>/dev/null \
+  || python -m pip install anthropic \
+  || vwarn "anthropic SDK not installed — the 'claude' comparison variant will be unavailable (v1/v2a/v2b unaffected)"
+
 # Verify the critical import chain on CPU NOW so we catch wheelhouse gaps BEFORE
 # wasting a GPU allocation. This walks rfdetr → torchvision → torch._dynamo →
 # sympy, the chain that crashed the user's first training run — AND, crucially,

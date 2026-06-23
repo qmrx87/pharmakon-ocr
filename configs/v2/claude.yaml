@@ -1,0 +1,77 @@
+# =============================================================================
+# configs/v2/claude.yaml — V2c: Claude API vision extractor (zero-training).
+#
+# A frontier multimodal model reads the vignette image directly into structured
+# field JSON — no detector, no fine-tune. Joins the comparison as the `claude`
+# variant alongside v1 (cascade), v2a (Donut), v2b (full-page docTR). Shares the
+# deterministic core (checksum / nomenclature / abstention) like every variant.
+#
+# WHERE IT RUNS — IMPORTANT
+#   The Claude API needs network + ANTHROPIC_API_KEY. Narval COMPUTE nodes are
+#   AIR-GAPPED, so this variant CANNOT run inside the offline SLURM DAG. Run it
+#   on the Narval LOGIN node (has limited HTTPS) or off-cluster — and in
+#   production, from your cloud backend (which is the natural home given the
+#   SaaS target). It needs NO pretrained-weight prefetch.
+#
+# PRIVACY / GOVERNANCE — read before enabling on real data
+#   This sends the vignette IMAGE to Anthropic's API. The API does not train on
+#   your data by default and Zero-Data-Retention is available, but images leave
+#   your infrastructure. For a production pharmacy SaaS handling patient-adjacent
+#   data, clear this with your data-governance owner first.
+# =============================================================================
+schema_version: 1
+
+model:
+  # ALWAYS the latest/most-capable by default (best accuracy ceiling for the
+  # comparison). For high-volume production you MAY switch to a cheaper model
+  # for cost — that's your call, set it here:
+  #   claude-opus-4-8 (default) | claude-sonnet-4-6 | claude-haiku-4-5
+  id: claude-opus-4-8
+  max_tokens: 8192            # tiny JSON out; headroom so structured JSON never truncates
+  # Adaptive thinking improves reading of degraded/rotated vignette text. It
+  # adds latency — for the lowest-latency production path set enabled:false.
+  thinking:
+    enabled: true
+    effort: low              # low | medium | high  (low = good accuracy/latency balance)
+
+# Fields the model extracts — SAME set as the Donut variant (configs/v2/vlm_donut.yaml)
+# so the head-to-head is apples-to-apples. Business-critical four first.
+fields:
+  - num_lot
+  - date_fab
+  - date_exp
+  - num_enregistrement
+  - ppa
+  - ppa_shp
+  - tr
+  - product_name
+
+prompt:
+  # Stable system prompt — cached (cache_control) so repeated scans pay ~0.1x on
+  # the prefix once it exceeds the model's cacheable minimum.
+  system: |
+    You are a precise OCR extractor for Algerian pharmaceutical "vignettes" (the
+    price/identity sticker on drug boxes). You are given ONE cropped vignette
+    image. Read ONLY what is printed; never infer, complete, or guess a value.
+
+    Return these fields, each as {value, confidence in [0,1]}:
+      num_lot            the batch/lot code (alphanumeric; often a vertical strip)
+      date_fab           manufacture date, as printed (e.g. 05/2025 or 01/05/2025)
+      date_exp           expiry date, as printed
+      num_enregistrement the registration number "N° d'enregistrement" / CODE
+      ppa                the PPA price in Algerian Dinars (digits + ,/. + DA)
+      ppa_shp            a single box that combines prix + SHP, if present (e.g. "248,50 + 1,50")
+      tr                 the Tarif de Référence, if present
+      product_name       the medication / brand name
+
+    Rules:
+      - Transcribe digits and punctuation EXACTLY as printed (French decimals: "132,21").
+      - The lot/dates strip is often rotated 90°; read it in its correct orientation.
+      - date_fab is the EARLIER date, date_exp the LATER one.
+      - If a field is absent, unreadable, or you are not sure, return value:"" and a
+        LOW confidence. Abstaining is correct; a wrong value is not acceptable.
+      - Output strictly matches the provided JSON schema — no extra commentary.
+  user: "Extract the vignette fields from this image as JSON."
+
+eval:
+  report_fields: [num_lot, date_fab, date_exp, num_enregistrement]

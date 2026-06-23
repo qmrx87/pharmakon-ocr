@@ -71,7 +71,9 @@ _VALID_BACKENDS = {"auto", "stub", "real"}
 # nomenclature, reimbursability, abstention) is SHARED — that is the point of
 # the comparison: same deterministic core, different reading strategy.
 _ENV_VARIANT = "VIGNOCR_PIPELINE_VARIANT"
-_VALID_VARIANTS = {"v1", "vlm", "fullpage"}
+#   claude : v2c — Claude API vision reads the vignette image -> JSON (no training,
+#            needs network + ANTHROPIC_API_KEY; not for offline compute nodes)
+_VALID_VARIANTS = {"v1", "vlm", "fullpage", "claude"}
 
 # classes.yaml `type` values that are structural/colour regions, not OCR fields.
 # (Mirrors ocr.infer.Recognizer._NON_TEXT_TYPES.) These are excluded from the
@@ -287,6 +289,17 @@ class VignocrPipeline:
                 "recognizer": _version_tag(self.vlm_model_dir, "donut"),
                 "nomenclature_version": self._nomenclature_version(),
             }
+        if self._variant == "claude":
+            try:
+                _cm = str((load_config("v2/claude").get("model", {}) or {}).get("id", "claude"))
+            except Exception:  # noqa: BLE001 - config best-effort
+                _cm = "claude"
+            return {
+                "variant": "claude",
+                "detector": "none",
+                "recognizer": _cm,
+                "nomenclature_version": self._nomenclature_version(),
+            }
         if self._variant == "fullpage":
             return {
                 "variant": "fullpage",
@@ -400,6 +413,10 @@ class VignocrPipeline:
             from vignocr.v2.fullpage import FullPageExtractor  # noqa: PLC0415
 
             self._v2_extractor = FullPageExtractor()
+        elif self._variant == "claude":
+            from vignocr.v2.claude_extract import ClaudeExtractor  # noqa: PLC0415
+
+            self._v2_extractor = ClaudeExtractor()
         else:  # pragma: no cover - guarded by _resolve_variant
             raise ValueError(f"no v2 extractor for variant {self._variant!r}")
         return self._v2_extractor

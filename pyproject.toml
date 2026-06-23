@@ -110,6 +110,13 @@ v2 = [
   "sentencepiece",
   "python-doctr[torch]>=0.8",
 ]
+# v2c — Claude API vision variant (zero-training; vignette image -> JSON). Pure
+# HTTP SDK, no torch/native deps, so it installs cleanly online on the LOGIN node
+# (the CC wheelhouse may not carry it). It runs where there's network +
+# ANTHROPIC_API_KEY — never on offline compute nodes.
+claude = [
+  "anthropic>=0.69",
+]
 dev = [
   "pytest==8.3.4",
   "pytest-cov==6.0.0",

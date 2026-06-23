@@ -75,6 +75,10 @@ def _build_extractors(args: argparse.Namespace) -> dict[str, Any]:
                 from vignocr.v2.fullpage import FullPageExtractor
 
                 out[name] = FullPageExtractor()
+            elif name == "claude":
+                from vignocr.v2.claude_extract import ClaudeExtractor
+
+                out[name] = ClaudeExtractor()  # needs network + ANTHROPIC_API_KEY
             elif name == "v1":
                 out[name] = _V1Adapter(args.v1_detector, args.v1_cfg)
             else:
@@ -169,6 +173,20 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         }
         log.info("compare.variant_done", variant=name, **report["variants"][name]["latency_ms"])
 
+    # Fold in a prior report's variants (e.g. the on-cluster v1/vlm/fullpage run)
+    # so the off-cluster `claude` run produces ONE combined table. New variants
+    # win on key collisions.
+    merge_path = getattr(args, "merge", None)
+    if merge_path and Path(merge_path).is_file():
+        try:
+            prior = json.loads(Path(merge_path).read_text(encoding="utf-8"))
+            merged = dict(prior.get("variants", {}))
+            merged.update(report["variants"])
+            report["variants"] = merged
+            log.info("compare.merged", source=str(merge_path), variants=sorted(merged))
+        except (OSError, ValueError) as exc:
+            log.warning("compare.merge_failed", source=str(merge_path), err=str(exc))
+
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
     (out_dir / "compare_report.json").write_text(
@@ -206,11 +224,15 @@ def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     p.add_argument("--dataset", default="ocr_dataset_vlm")
     p.add_argument("--split", default="test")
-    p.add_argument("--variants", default="vlm,fullpage", help="comma list: v1,vlm,fullpage")
+    p.add_argument("--variants", default="vlm,fullpage",
+                   help="comma list: v1,vlm,fullpage,claude (claude needs network + ANTHROPIC_API_KEY)")
     p.add_argument("--vlm-dir", default=None, help="fine-tuned Donut checkpoint dir")
     p.add_argument("--v1-detector", default=None, help="v1 Stage B checkpoint/onnx")
     p.add_argument("--v1-cfg", default="detection/rfdetr_medium")
     p.add_argument("--out", default="experiments/v2_compare")
+    p.add_argument("--merge", default=None,
+                   help="prior compare_report.json to fold in (e.g. the on-cluster run "
+                        "when adding `claude` off-cluster) — one combined table")
     p.add_argument("--limit", type=int, default=0, help="cap images (0 = all)")
     args = p.parse_args(argv)
     run(args)

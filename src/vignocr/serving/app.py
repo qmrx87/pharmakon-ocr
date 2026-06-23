@@ -36,8 +36,10 @@ from vignocr.common.schemas import ExtractionRecord, Flow
 from vignocr.serving.deps import (
     PipelineLike,
     Settings,
+    get_facture_extractor,
     get_pipeline,
     get_settings,
+    is_facture_stub,
     is_stub,
 )
 from vignocr.serving.schemas import (
@@ -198,6 +200,95 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             content=record.model_dump(mode="json"),
             headers=headers,
         )
+
+    # ``/extract/vignette`` is an explicit alias of ``/extract`` — the Node layer
+    # calls the document-typed paths (/extract/vignette, /extract/facture); the
+    # bare /extract stays for back-compat.
+    app.add_api_route(
+        "/extract/vignette",
+        extract,
+        methods=["POST"],
+        response_model=ExtractionRecord,
+        tags=["extraction"],
+        summary="Extract structured fields from a vignette image (alias of /extract)",
+    )
+
+    # --------------------------------------------------------- extract/facture
+    @app.post(
+        "/extract/facture",
+        tags=["extraction"],
+        responses={
+            413: {"model": ErrorResponse, "description": "Upload too large"},
+            415: {"model": ErrorResponse, "description": "Unsupported media type"},
+            422: {"model": ErrorResponse, "description": "Unreadable / invalid image"},
+            502: {"model": ErrorResponse, "description": "FactureOCR backend failed"},
+            503: {"model": ErrorResponse, "description": "FactureOCR disabled/unavailable"},
+        },
+        summary="Extract line items from a supplier-invoice (facture) image",
+    )
+    async def extract_facture(
+        file: UploadFile = File(..., description="Supplier invoice image (image/*)."),  # noqa: B008
+        idempotency_key: str | None = Form(  # noqa: B008
+            default=None, description="Optional client key, echoed in logs."
+        ),
+    ) -> Response:
+        """Read one supplier invoice → ``{header, lines, totals, verification}``.
+
+        Same upload validation as ``/extract``; the result carries per-line
+        confidence and a deterministic arithmetic check (``verification`` —
+        ``needs_review`` flags any line whose math mismatches or is low-confidence)
+        for prefill-and-confirm stock intake. Never auto-commits anything.
+        """
+        req_id = idempotency_key or uuid.uuid4().hex
+        rlog = log.bind(
+            request_id=req_id,
+            idempotency_key=idempotency_key,
+            filename=file.filename,
+            doc="facture",
+        )
+
+        data = await _read_validated_upload(file, settings, rlog)
+        image = _decode_image(data, rlog)
+
+        extractor = get_facture_extractor()
+        if extractor is None:
+            rlog.warning("facture_disabled")
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="FactureOCR is disabled (set VIGNOCR_FACTURE_ENABLED=1).",
+            )
+
+        t0 = time.perf_counter()
+        try:
+            result = extractor.extract_and_verify(image)
+        except ImportError as exc:
+            rlog.error("facture_deps_missing", error=str(exc))
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="FactureOCR backend unavailable; install .[claude].",
+            ) from exc
+        except Exception as exc:  # noqa: BLE001 — surface as 502 w/ structured log
+            rlog.error("facture_failed", error=str(exc), error_type=type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="FactureOCR failed while processing the image.",
+            ) from exc
+        elapsed_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+        v = result.get("verification", {}) if isinstance(result, dict) else {}
+        rlog.info(
+            "facture_ok",
+            n_lines=v.get("n_lines"),
+            n_line_mismatches=v.get("n_line_mismatches"),
+            needs_review=v.get("needs_review"),
+            stub=is_facture_stub(extractor),
+            elapsed_ms=elapsed_ms,
+        )
+
+        headers = {"X-Request-ID": req_id}
+        if idempotency_key:
+            headers["Idempotency-Key"] = idempotency_key
+        return JSONResponse(status_code=status.HTTP_200_OK, content=result, headers=headers)
 
     return app
 

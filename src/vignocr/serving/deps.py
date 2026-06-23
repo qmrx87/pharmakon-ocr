@@ -22,6 +22,7 @@ workers stay stateless.
 
 from __future__ import annotations
 
+import os
 import time
 from functools import lru_cache
 from typing import Any, Protocol, runtime_checkable
@@ -95,6 +96,11 @@ class Settings(BaseSettings):
         default=True,
         description="If the real pipeline can't load, serve a deterministic stub "
         "(True) or report not-ready / 503 (False). Set False in prod.",
+    )
+    facture_enabled: bool = Field(
+        default=True,
+        description="Enable POST /extract/facture (FactureOCR via Claude). Needs "
+        "ANTHROPIC_API_KEY at this host; set False to hide the route (503).",
     )
     title: str = Field(default="VignOCR", description="OpenAPI/title shown in docs.")
 
@@ -210,7 +216,81 @@ def is_stub(pipeline: PipelineLike) -> bool:
     return isinstance(pipeline, _StubPipeline)
 
 
+# --------------------------------------------------------------------------- #
+# FactureOCR (supplier-invoice reader) — separate lazy singleton
+# --------------------------------------------------------------------------- #
+
+
+@runtime_checkable
+class FactureLike(Protocol):
+    """Structural type for the facture extractor (keeps serving decoupled)."""
+
+    def extract_and_verify(self, image: Any) -> dict[str, Any]: ...
+
+
+class _FactureStub:
+    """Honest stand-in for FactureOCR when the Claude backend isn't available.
+
+    Returns a well-formed but empty facture record (``stub: True`` in the
+    verification block) so ``/extract/facture`` is exercisable on a box with no
+    ``anthropic`` SDK / no API key.
+    """
+
+    def extract_and_verify(self, image: Any) -> dict[str, Any]:  # noqa: ARG002
+        return {
+            "header": {"supplier": "", "invoice_number": "", "invoice_date": "", "client": ""},
+            "lines": [],
+            "totals": {},
+            "verification": {
+                "n_lines": 0,
+                "n_checkable_lines": 0,
+                "n_line_mismatches": 0,
+                "n_low_confidence_lines": 0,
+                "sum_line_total": "0",
+                "printed_net": None,
+                "totals_ok": None,
+                "totals_rel_error": None,
+                "needs_review": False,
+                "stub": True,
+            },
+        }
+
+
+@lru_cache(maxsize=1)
+def get_facture_extractor() -> FactureLike | None:
+    """Return the process-wide FactureOCR extractor, or ``None`` when disabled.
+
+    ``None`` (``facture_enabled=False``) makes ``/extract/facture`` answer 503.
+    Falls back to :class:`_FactureStub` when ``allow_stub`` and either the
+    ``anthropic`` SDK or ``ANTHROPIC_API_KEY`` is absent — so dev works offline.
+    """
+    settings = get_settings()
+    if not settings.facture_enabled:
+        log.info("facture_disabled")
+        return None
+    if settings.allow_stub and not os.environ.get("ANTHROPIC_API_KEY"):
+        log.warning("facture_stub_fallback", reason="ANTHROPIC_API_KEY not set")
+        return _FactureStub()
+    try:
+        from vignocr.facture.claude_extract import FactureExtractor  # noqa: PLC0415
+
+        log.info("facture_extractor_loaded", stub=False)
+        return FactureExtractor()
+    except ImportError as exc:
+        if settings.allow_stub:
+            log.warning("facture_stub_fallback", reason=str(exc))
+            return _FactureStub()
+        log.error("facture_unavailable", error=str(exc), allow_stub=False)
+        raise
+
+
+def is_facture_stub(extractor: FactureLike | None) -> bool:
+    """True if ``extractor`` is the deterministic FactureOCR stub."""
+    return isinstance(extractor, _FactureStub)
+
+
 def reset_pipeline_cache() -> None:
-    """Clear the cached singleton (used by tests / hot config reloads)."""
+    """Clear the cached singletons (used by tests / hot config reloads)."""
     get_pipeline.cache_clear()
     get_settings.cache_clear()
+    get_facture_extractor.cache_clear()

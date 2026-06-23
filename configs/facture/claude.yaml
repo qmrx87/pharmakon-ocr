@@ -1,0 +1,76 @@
+# =============================================================================
+# configs/facture/claude.yaml — FactureOCR via the Claude API.
+#
+# Reads an Algerian pharmaceutical SUPPLIER INVOICE (facture de distributeur)
+# image into structured {header, lines, totals} for bulk stock intake. Per-line:
+# designation, dci, quantity, lot, expiry, unit_price_ht (purchase), ppa, shp,
+# line_total. Layouts vary by distributor (VECOPHARM, adpp, ...), which is why a
+# VLM is used over a fixed template parser.
+#
+# Runs wherever there's network + ANTHROPIC_API_KEY (the OCR service host / cloud
+# backend). Output is verified deterministically (vignocr.facture.verify) and is
+# always PREFILL-AND-CONFIRM — never auto-commit stock, lots, or prices.
+# =============================================================================
+schema_version: 1
+
+model:
+  id: claude-opus-4-8
+  # Invoices are denser than vignettes (20+ lines x ~9 columns) — give the JSON
+  # room so it never truncates mid-table (truncation => unparseable).
+  max_tokens: 16000
+  thinking:
+    enabled: true
+    effort: low
+
+# The per-line columns to extract. Names are invoice-native; mapping to the ERP's
+# Product/Lot/Stock model happens in the integration adapter, not here.
+line_fields:
+  - designation        # product name + packaging, e.g. "APROVASC 150MG/5MG COMP.PELLI B/30"
+  - dci                # active ingredient (DCI) — absent on some invoices
+  - quantity           # Qté
+  - lot                # N° Lot
+  - expiry             # Exp / D.D.P (formats vary: MM/YY or DD/MM/YYYY)
+  - unit_price_ht      # P.U.HT / Px Vente — the PURCHASE unit price
+  - ppa                # PPA / P.P.A — public price
+  - shp                # SHP — present on some invoices
+  - line_total         # Mont.HT / MT Vente
+
+prompt:
+  system: |
+    You read Algerian pharmaceutical SUPPLIER INVOICES ("facture de distributeur")
+    from a photo or scan. Distributors use different layouts (VECOPHARM, adpp,
+    ...); column names and order vary. Extract the header, EVERY product line, and
+    the totals. Transcribe ONLY what is printed — never infer, compute, or guess.
+
+    HEADER: supplier name, invoice_number, invoice_date, client (pharmacy) name.
+
+    For EACH product line return these fields (use "" when a column is absent):
+      designation     full product text incl. packaging (e.g. "...COMP.PELLI B/30")
+      dci             active ingredient, if a DCI column exists
+      quantity        the quantity (Qté)
+      lot             the lot / batch number (N° Lot) — read EXACTLY, it is critical
+      expiry          the expiry as printed (Exp / D.D.P; e.g. "02/29" or "30/09/2028")
+      unit_price_ht   the unit purchase price (P.U.HT or "Px Vente")
+      ppa             the PPA / P.P.A (public price)
+      shp             the SHP, if present
+      line_total      the line amount (Mont.HT / MT Vente)
+      confidence      your confidence for THIS line in [0,1]
+    Plus TOTALS: net_a_payer (Net à payer / Montant à payer), total_ht, net_ht.
+
+    Rules:
+      - Money: transcribe digits and separators EXACTLY as printed (French style:
+        space thousands, comma OR dot decimal — "1 247.92", "1 497,50"). Do NOT
+        reformat or round. Keep DZD amounts as-is; do not convert.
+      - Read lot and expiry with extra care — they drive stock + recall integrity.
+      - If a cell is unreadable or missing, return "" and LOWER the line confidence.
+        Abstaining is correct; a wrong lot/price is not acceptable.
+      - Do NOT compute or "fix" totals — transcribe the printed totals; arithmetic
+        is verified downstream.
+      - Capture EVERY line, top to bottom; do not skip or merge rows.
+      - Output strictly matches the provided JSON schema, no commentary.
+  user: "Extract this supplier invoice (header, all product lines, totals) as JSON."
+
+# Deterministic arithmetic verification (vignocr.facture.verify).
+verify:
+  line_tolerance: 0.02      # relative tolerance for qty*unit_price vs line_total
+  total_tolerance: 0.02     # relative tolerance for sum(line_total) vs net
